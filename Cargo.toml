@@ -1,0 +1,24 @@
+[package]
+name = "rata-spot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui   = "0.27"
+crossterm = "0.27"
+tokio     = { version = "1", features = ["full"] }
+anyhow    = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Media_Control",
+  "Media_Playback",
+  "Foundation",
+]}
+
+[profile.release]
+opt-level     = "z"      # optimizar por tamano binario
+lto           = true     # link-time optimization agresivo
+codegen-units = 1        # un solo codegen para mejor LTO
+panic         = "abort"  # elimina stack unwinding (~500KB menos)
+strip         = true     # borra simbolos de debug del binario
