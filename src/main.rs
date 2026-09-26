@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -135,8 +135,20 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
         // c. Teclado.
         if event::poll(Duration::from_millis(250))? {
             if let Event::Key(key) = event::read()? {
+                // Windows manda Press + Repeat (sostenida) + Release por tecla.
+                // Sin filtrar, 1 tap = Press+Release = 2 toggles (pausa fantasma
+                // que se deshace sola) y sostener = flicker aleatorio.
+                if key.kind == KeyEventKind::Release {
+                    continue;
+                }
+                // Solo flechas aceptan Repeat (con throttle 120ms); las
+                // acciones (space/n/p/enter/l) solo responden a Press.
+                let is_repeat = key.kind == KeyEventKind::Repeat;
                 match key.code {
                     KeyCode::Char(' ') => {
+                        if is_repeat {
+                            continue;
+                        }
                         if let Some(ref s) = session {
                             // Ya suena o pausado con contexto -> GSMTC basta.
                             let _ = gsmtc::toggle(s).await;
@@ -168,11 +180,17 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                         }
                     }
                     KeyCode::Char('n') => {
+                        if is_repeat {
+                            continue;
+                        }
                         if let Some(ref s) = session {
                             let _ = gsmtc::next(s).await;
                         }
                     }
                     KeyCode::Char('p') => {
+                        if is_repeat {
+                            continue;
+                        }
                         if let Some(ref s) = session {
                             let _ = gsmtc::prev(s).await;
                         }
@@ -196,6 +214,9 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                         }
                     }
                     KeyCode::Char('l') => {
+                        if is_repeat {
+                            continue;
+                        }
                         // Recargar biblioteca a mano (por si se abrio tarde).
                         state.pl_msg = "cargando biblioteca...".to_string();
                         let _ = terminal.draw(|f| ui::render(f, &mut state));
@@ -212,6 +233,9 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                     // → o Enter: en biblioteca abre las canciones de la
                     // playlist; en canciones toca la rola elegida.
                     KeyCode::Right | KeyCode::Enter => {
+                        if is_repeat {
+                            continue;
+                        }
                         match state.view {
                             ui::View::Library => {
                                 if let Some(item) = state.pl_selected().cloned() {
