@@ -28,6 +28,10 @@ pub async fn get_brave_session() -> Result<Session> {
         .GetSessions()
         .context("GetSessions fallo (falta feature Foundation_Collections?)")?;
 
+    // Con 2 ventanas Brave (la tuya + la nuestra) la primera sesion puede
+    // ser una vieja pausada con metadata congelada -> barra estatica.
+    // Se prefiere la que esta SONANDO; si ninguna, la primera.
+    let mut fallback: Option<Session> = None;
     for i in 0..sessions.Size().unwrap_or(0) {
         let session = sessions.GetAt(i).context("GetAt sesion fallo")?;
         let app_id = session
@@ -35,12 +39,23 @@ pub async fn get_brave_session() -> Result<Session> {
             .map(|h| h.to_string())
             .unwrap_or_default()
             .to_lowercase();
-        if app_id.contains("brave") {
+        if !app_id.contains("brave") {
+            continue;
+        }
+        let playing = session
+            .GetPlaybackInfo()
+            .and_then(|info| info.PlaybackStatus())
+            .map(|s| s == PlaybackStatus::Playing)
+            .unwrap_or(false);
+        if playing {
             return Ok(session);
+        }
+        if fallback.is_none() {
+            fallback = Some(session);
         }
     }
 
-    anyhow::bail!("sesion Brave no encontrada todavia")
+    fallback.context("sesion Brave no encontrada todavia")
 }
 
 /// Lee titulo/artista/album + playing/paused + progreso.

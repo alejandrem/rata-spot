@@ -92,6 +92,14 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
     // Reintento de conexion ~1s (4 ticks x 250ms) para no martillar COM.
     let mut ticks_since_retry: u8 = 99;
     let mut saved_title = state.smoother.last_known().title;
+    // Antidotos de barra congelada (baratos, sin costo extra):
+    // - last_raw_pos: si la posicion avanza, esta sonando aunque el
+    //   status GSMTC diga otra cosa (mentiroso/atrasado).
+    // - last_good_dur: si falta el timeline, reutilizar la duracion
+    //   conocida de la misma rola (si no, progreso clavado en 0).
+    let mut last_raw_pos = Duration::ZERO;
+    let mut last_good_dur = Duration::ZERO;
+    let mut last_good_title = String::new();
     // Fallos seguidos de get_track: si la ventana se cerro a mano, la
     // sesion queda muerta y hay que soltarla para reconectar (12 ticks ~3s;
     // los huecos de cambio de cancion son mas cortos y no la disparan).
@@ -306,8 +314,25 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
         // Si la sesion murio (Brave cerrado a mano), intentar reconectar.
         if let Some(ref s) = session {
             match gsmtc::get_track(s).await {
-                Ok(fresh) => {
+                Ok(mut fresh) => {
                     track_fail_streak = 0;
+                    if fresh.position > last_raw_pos {
+                        fresh.playing = true;
+                    }
+                    last_raw_pos = fresh.position;
+                    if fresh.duration.is_zero()
+                        && fresh.title == last_good_title
+                        && !last_good_dur.is_zero()
+                    {
+                        fresh.duration = last_good_dur;
+                        fresh.progress = (fresh.position.as_secs_f64()
+                            / fresh.duration.as_secs_f64())
+                        .clamp(0.0, 1.0);
+                    }
+                    if !fresh.duration.is_zero() {
+                        last_good_dur = fresh.duration;
+                        last_good_title = fresh.title.clone();
+                    }
                     state.smoother.update(fresh.clone());
                     // Persistir solo al cambiar de cancion (no cada tick).
                     if fresh.title != saved_title {

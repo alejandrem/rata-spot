@@ -60,6 +60,30 @@ async fn space_inicia_musica() {
         }
     }
 
+    /// Diagnostico GSMTC en vivo: sesion, playing, posicion x3 con 2s
+    /// entre muestras (solo imprime, siempre pasa).
+    #[tokio::test]
+    async fn diag_gsmtc() {
+        use crate::gsmtc::{get_brave_session, get_track};
+        let s = match get_brave_session().await {
+            Ok(s) => s,
+            Err(e) => {
+                println!("DIAG-GSMTC: sin sesion ({e}) — pon musica y reintenta");
+                return;
+            }
+        };
+        for i in 0..3 {
+            match get_track(&s).await {
+                Ok(t) => println!(
+                    "DIAG-GSMTC[{i}]: playing={} pos={:?} dur={:?} prog={:.3} | {} — {}",
+                    t.playing, t.position, t.duration, t.progress, t.title, t.artist
+                ),
+                Err(e) => println!("DIAG-GSMTC[{i}]: get_track fallo ({e})"),
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+
     /// Prueba viva de lectura: la biblioteca del DOM llega a la TUI
     /// (nombres UTF-8/emojis intactos). Solo lee, no reproduce.
     /// Autosuficiente: asegura la pestana antes de leer.
