@@ -17,8 +17,6 @@ pub mod track;
 
 pub use history::{load_last_track, save_last_track};
 pub use session::{get_brave_session, get_track, next, pause, prev, toggle};
-#[allow(unused_imports)]
-pub use session::{play, wait_for_brave_session};
 pub use smoother::ProgressSmoother;
 pub use track::{Session, TrackInfo};
 #[allow(unused_imports)]

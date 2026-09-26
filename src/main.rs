@@ -177,9 +177,24 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                             let _ = gsmtc::prev(s).await;
                         }
                     }
-                    // Biblioteca (sidebar izquierda del DOM).
-                    KeyCode::Char('j') | KeyCode::Down => state.pl_move(1),
-                    KeyCode::Char('k') | KeyCode::Up => state.pl_move(-1),
+                    // Biblioteca (sidebar) y canciones (centro).
+                    // Flechas con throttle: sostenida avanza legible.
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if state.nav_ok() {
+                            match state.view {
+                                ui::View::Library => state.pl_move(1),
+                                ui::View::Tracks => state.tr_move(1),
+                            }
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        if state.nav_ok() {
+                            match state.view {
+                                ui::View::Library => state.pl_move(-1),
+                                ui::View::Tracks => state.tr_move(-1),
+                            }
+                        }
+                    }
                     KeyCode::Char('l') => {
                         // Recargar biblioteca a mano (por si se abrio tarde).
                         state.pl_msg = "cargando biblioteca...".to_string();
@@ -194,21 +209,56 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                             Err(e) => state.pl_msg = format!("biblioteca: {e}"),
                         }
                     }
-                    KeyCode::Enter => {
-                        if let Some(item) = state.pl_selected().cloned() {
-                            state.status =
-                                format!("▶ abriendo {}...", item.name);
-                            let _ = terminal.draw(|f| ui::render(f, &mut state));
-                            match cdp::play_library_uri(&item.uri).await {
-                                Ok(_) => {
-                                    state.status = "▶ reproduciendo, conectando...".to_string()
+                    // → o Enter: en biblioteca abre las canciones de la
+                    // playlist; en canciones toca la rola elegida.
+                    KeyCode::Right | KeyCode::Enter => {
+                        match state.view {
+                            ui::View::Library => {
+                                if let Some(item) = state.pl_selected().cloned() {
+                                    state.tr_playlist = item.name.clone();
+                                    state.tracks.clear();
+                                    state.tr_index = 0;
+                                    state.tr_state.select(Some(0));
+                                    state.tr_msg = "abriendo playlist...".to_string();
+                                    state.view = ui::View::Tracks;
+                                    let _ = terminal.draw(|f| ui::render(f, &mut state));
+                                    match cdp::open_playlist(&item.uri).await {
+                                        Ok(()) => match cdp::playlist_tracks().await {
+                                            Ok(tracks) => {
+                                                state.tracks = tracks;
+                                                state.tr_index = 0;
+                                                state.tr_state.select(Some(0));
+                                                state.tr_msg.clear();
+                                            }
+                                            Err(e) => {
+                                                state.tr_msg = format!("canciones: {e:.80}")
+                                            }
+                                        },
+                                        Err(e) => {
+                                            state.tr_msg = format!("no abre: {e:.80}")
+                                        }
+                                    }
                                 }
-                                Err(e) => {
-                                    state.status = format!("no sono: {e:.60}");
+                            }
+                            ui::View::Tracks => {
+                                if let Some(t) = state.tr_selected().cloned() {
+                                    state.status = format!("▶ tocando {}...", t.title);
+                                    let _ = terminal.draw(|f| ui::render(f, &mut state));
+                                    match cdp::play_track(&t.id).await {
+                                        Ok(_) => {
+                                            state.status =
+                                                "▶ reproduciendo, conectando...".to_string()
+                                        }
+                                        Err(e) => {
+                                            state.status = format!("no sono: {e:.60}");
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                    // ← o Esc: volver a la biblioteca.
+                    KeyCode::Left | KeyCode::Esc => state.back_to_library(),
                     KeyCode::Char('q') => break,
                     _ => {}
                 }

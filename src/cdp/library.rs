@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 use super::client::cdp_call;
-use super::tabs::spotify_ws_url;
+use super::tabs::{bring_spotify_front, spotify_ws_url};
 
 /// Un item de "Tu biblioteca": playlist, artista, album o podcast.
 /// El `uri` (spotify:playlist:XXX) sirve para abrirlo y reproducirlo.
@@ -26,10 +26,34 @@ pub struct LibraryItem {
 /// renderiza el grid.
 pub async fn library_items() -> Result<Vec<LibraryItem>> {
     let mut last_err = String::new();
-    for _ in 0..6 {
+    for _ in 0..3 {
         match library_snapshot().await {
-            Ok(items) if !items.is_empty() => return Ok(items),
-            Ok(_) => last_err = "biblioteca vacia".to_string(),
+            Ok((items, _)) if !items.is_empty() => return Ok(items),
+            Ok((_, stuck)) => {
+                if stuck {
+                    // Esqueletos atorados: 1) ventana ocluida -> traer al
+                    // frente y releer; 2) tab wedged por churn (navegaciones
+                    // rapidas de tests) -> renavegar al home SOLO si nada
+                    // suena (no arruinar reproduccion ajena).
+                    let _ = bring_spotify_front().await;
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                    if let Ok((items2, _)) = library_snapshot().await {
+                        if !items2.is_empty() {
+                            return Ok(items2);
+                        }
+                    }
+                    if crate::gsmtc::get_brave_session().await.is_err() {
+                        renavigate_home().await?;
+                        tokio::time::sleep(Duration::from_secs(4)).await;
+                        if let Ok((items3, _)) = library_snapshot().await {
+                            if !items3.is_empty() {
+                                return Ok(items3);
+                            }
+                        }
+                    }
+                }
+                last_err = "biblioteca vacia (¿captcha? recarga Brave)".to_string();
+            }
             Err(e) => last_err = e.to_string(),
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -37,7 +61,20 @@ pub async fn library_items() -> Result<Vec<LibraryItem>> {
     anyhow::bail!("biblioteca no lista: {last_err}")
 }
 
-async fn library_snapshot() -> Result<Vec<LibraryItem>> {
+/// Renavega la pestana al home (recarga biblioteca atorada).
+async fn renavigate_home() -> Result<()> {
+    let ws_url = spotify_ws_url().await?;
+    super::client::cdp_call(
+        &ws_url,
+        12,
+        "Page.navigate",
+        serde_json::json!({ "url": crate::launcher::SPOTIFY_URL }),
+    )
+    .await?;
+    Ok(())
+}
+
+async fn library_snapshot() -> Result<(Vec<LibraryItem>, bool)> {
     let ws_url = spotify_ws_url().await?;
     let v = cdp_call(
         &ws_url,
@@ -79,8 +116,48 @@ async fn library_snapshot() -> Result<Vec<LibraryItem>> {
             kind,
         });
     }
-    Ok(items)
+    let total = data.get("total").and_then(|x| x.as_i64()).unwrap_or(0);
+    let stuck = items.is_empty() && total > 0;
+    Ok((items, stuck))
 }
+
+/// Diagnostico del DOM para depurar: grid, rowcount, ids, sidebar, url.
+/// Solo la usa el test diag_estado.
+#[allow(dead_code)]
+pub async fn library_diag() -> Result<String> {
+    let ws_url = spotify_ws_url().await?;
+    let v = super::client::cdp_call(
+        &ws_url,
+        11,
+        "Runtime.evaluate",
+        serde_json::json!({
+            "expression": DIAG_JS,
+            "returnByValue": true,
+        }),
+    )
+    .await?;
+    Ok(v
+        .pointer("/result/result/value")
+        .and_then(|x| x.as_str())
+        .unwrap_or("?")
+        .to_string())
+}
+
+#[allow(dead_code)]
+const DIAG_JS: &str = r#"(() => {
+  const grid = document.querySelector('[role="grid"][aria-label="Tu biblioteca"]');
+  const box = document.querySelector('#Desktop_LeftSidebar_Id [data-overlayscrollbars-viewport]');
+  return JSON.stringify({
+    url: location.href, title: document.title.slice(0, 60), ready: document.readyState,
+    hasGrid: !!grid, rowcount: grid ? grid.getAttribute('aria-rowcount') : null,
+    hasBox: !!box,
+    titleIds: document.querySelectorAll('[id^="listrow-title-spotify:"]').length,
+    libRows: grid ? grid.querySelectorAll('[role="row"]').length : -1,
+    gridHtml: grid ? grid.outerHTML.slice(0, 400) : null,
+    sidebars: document.querySelectorAll('#Desktop_LeftSidebar_Id').length,
+    grids: [...document.querySelectorAll('[role="grid"]')].map(g => g.getAttribute('aria-label'))
+  });
+})()"#;
 
 /// Un evaluate async: scrollea el sidebar completo leyendo filas por
 /// [id^=listrow-title-spotify:] (selectores estables, nada de clases hash).
@@ -90,6 +167,13 @@ const LIBRARY_JS: &str = r#"(async () => {
   if (!grid || !box) return JSON.stringify({error:'no-grid'});
   const total = parseInt(grid.getAttribute('aria-rowcount') || '0', 10);
   const out = new Map();
+  // Esperar filas REALES: el grid a veces llega con esqueletos
+  // (rowcount>0 pero cero titulos) mientras carga la biblioteca.
+  let waited = 0;
+  while (document.querySelectorAll('[id^="listrow-title-spotify:"]').length === 0 && waited < 25) {
+    await new Promise(r => setTimeout(r, 300));
+    waited++;
+  }
   const read = () => {
     // El URI vive en el id del titulo (listrow-title-spotify:playlist:XXX),
     // NO en la fila: [role="row"] no trae aria-labelledby.
@@ -124,44 +208,3 @@ const LIBRARY_JS: &str = r#"(async () => {
   }
   return JSON.stringify({total, items:[...out.values()]});
 })()"#;
-
-/// Reproduce un item por su URI: navega a open.spotify.com/{kind}/{id}
-/// (misma pestana) y hace click al Play cuando renderiza.
-/// Vale para playlist, artist, album y show.
-pub async fn play_library_uri(uri: &str) -> Result<String> {
-    let mut parts = uri.split(':');
-    let kind = parts.nth(1).context("URI sin kind")?;
-    let id = parts.next().context("URI sin id")?;
-    if !["playlist", "artist", "album", "show"].contains(&kind) {
-        anyhow::bail!("kind no reproducible: {kind}");
-    }
-    let url = format!("https://open.spotify.com/{kind}/{id}");
-    let ws_url = spotify_ws_url().await?;
-    cdp_call(
-        &ws_url,
-        20,
-        "Page.navigate",
-        serde_json::json!({ "url": url }),
-    )
-    .await?;
-    // Esperar render y click (misma logica que el primer play).
-    for _ in 0..30 {
-        let v = cdp_call(
-            &ws_url,
-            21,
-            "Runtime.evaluate",
-            serde_json::json!({ "expression": super::playback::PLAY_JS, "returnByValue": true }),
-        )
-        .await?;
-        let out = v
-            .pointer("/result/result/value")
-            .and_then(|x| x.as_str())
-            .unwrap_or("?")
-            .to_string();
-        if out.starts_with("clicked:") {
-            return Ok(out);
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    anyhow::bail!("la pagina {kind} no mostro Play (¿contenido no disponible?)");
-}

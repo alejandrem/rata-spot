@@ -11,8 +11,11 @@ use super::client::cdp_call;
 use super::tabs::{ensure_spotify_tab, spotify_ws_url};
 
 /// Click al Play probando varios selectores (ES + EN + player bar).
+/// Solo botones VISIBLES y habilitados: querySelector tambien encuentra
+/// los ocultos y clickearlos no suena (click fantasma).
 /// pub(crate): lo reutiliza library.rs tras navegar a una playlist.
 pub(crate) const PLAY_JS: &str = r#"(() => {
+  const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
   const sels = [
     '[data-testid="control-button-playpause"]',
     '[data-testid="play-button"]',
@@ -21,8 +24,10 @@ pub(crate) const PLAY_JS: &str = r#"(() => {
   ];
   for (const s of sels) {
     const b = document.querySelector(s);
-    if (b) { b.click(); return 'clicked:' + s; }
+    if (vis(b)) { b.click(); return 'clicked:' + s; }
   }
+  const any = [...document.querySelectorAll('button[aria-label="Reproducir"],button[aria-label="Play"]')].find(vis);
+  if (any) { any.click(); return 'clicked:fallback'; }
   return 'no-button';
 })()"#;
 

@@ -141,18 +141,3 @@ pub async fn toggle(session: &Session) -> Result<()> {
         play(session).await
     }
 }
-
-/// Loop reactivo (Fase 3.2): reintenta cada 1s indefinidamente.
-/// No usa delay fijo de arranque; el llamador muestra "Conectando..."
-/// mientras esto pende. Solo regresa cuando hay sesion Brave.
-#[allow(dead_code)]
-pub async fn wait_for_brave_session() -> Session {
-    loop {
-        match get_brave_session().await {
-            Ok(session) => break session,
-            Err(_) => {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        }
-    }
-}

@@ -8,10 +8,13 @@ use ratatui::{
     Frame,
 };
 
-use super::state::AppState;
+use super::state::{AppState, View};
+use super::tracks::render_tracks;
 
 /// Dibuja header + progreso + centro + footer en `area`.
-pub fn render_player(frame: &mut Frame, state: &AppState, area: Rect) {
+/// El centro muestra canciones si se abrio una playlist (→/Enter),
+/// o el estado de conexion en vista biblioteca.
+pub fn render_player(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -63,24 +66,29 @@ pub fn render_player(frame: &mut Frame, state: &AppState, area: Rect) {
         .label(track.format_time());
     frame.render_widget(gauge, chunks[1]);
 
-    // ---- CENTRO ----
-    let center_text = if !state.connected {
-        if state.status.is_empty() {
-            "Conectando con Spotify...".to_string()
-        } else {
-            format!("Conectando con Spotify...\n{}", state.status)
-        }
-    } else if track.album.is_empty() {
-        String::new()
+    // ---- CENTRO: canciones de la playlist o estado ----
+    if state.view == View::Tracks {
+        render_tracks(frame, state, chunks[2]);
     } else {
-        format!("💿 {}", track.album)
-    };
-    let center = Paragraph::new(center_text).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(center, chunks[2]);
+        let center_text = if !state.connected {
+            if state.status.is_empty() {
+                "Conectando con Spotify...".to_string()
+            } else {
+                format!("Conectando con Spotify...\n{}", state.status)
+            }
+        } else if track.album.is_empty() {
+            String::new()
+        } else {
+            format!("💿 {}", track.album)
+        };
+        let center =
+            Paragraph::new(center_text).style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(center, chunks[2]);
+    }
 
     // ---- FOOTER ----
     let footer = Paragraph::new(Line::from(vec![Span::styled(
-        "[spc] play [n] sig [p] ant [j/k] lista [enter] tocar [q] salir",
+        "[spc] play [n] sig [p] ant [j/k] mover [→] canciones [←] volver [q] salir",
         Style::default().fg(Color::DarkGray),
     )]));
     frame.render_widget(footer, chunks[3]);

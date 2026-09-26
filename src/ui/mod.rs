@@ -11,8 +11,9 @@
 pub mod player;
 pub mod sidebar;
 pub mod state;
+pub mod tracks;
 
-pub use state::AppState;
+pub use state::{AppState, View};
 
 use ratatui::{
     layout::{Constraint, Direction, Layout},

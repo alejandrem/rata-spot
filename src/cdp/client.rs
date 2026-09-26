@@ -28,7 +28,9 @@ pub(crate) async fn cdp_call(
         .await
         .context("envio CDP fallo")?;
 
-    Ok(tokio::time::timeout(Duration::from_secs(5), async {
+    // Lectura 12s: los evaluates async (scroll biblioteca/tracklist)
+    // tardan varios segundos legitimos; el timeout solo caza cuelgues.
+    Ok(tokio::time::timeout(Duration::from_secs(12), async {
         while let Some(msg) = read.next().await {
             let msg = msg?;
             if let tokio_tungstenite::tungstenite::Message::Text(t) = msg {

@@ -91,9 +91,4 @@ impl ProgressSmoother {
         t.playing = false;
         self.last_track = Some(t);
     }
-
-    #[allow(dead_code)]
-    pub fn has_history(&self) -> bool {
-        self.last_track.is_some()
-    }
 }

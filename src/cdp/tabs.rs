@@ -29,6 +29,32 @@ pub(crate) async fn spotify_ws_url() -> Result<String> {
     anyhow::bail!("no hay pestana Spotify en el Brave depurable")
 }
 
+/// URL de la pestana Spotify elegida (para logs de tests).
+/// Solo la usan los tests.
+#[allow(dead_code)]
+pub async fn spotify_tab_url() -> Result<String> {
+    let body = fetch_json_list().await?;
+    let list: serde_json::Value =
+        serde_json::from_str(&body).context("JSON CDP invalido")?;
+    for t in list.as_array().cloned().unwrap_or_default() {
+        let ty = t.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let url = t.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        if ty == "page" && url.contains("open.spotify") {
+            return Ok(url.to_string());
+        }
+    }
+    anyhow::bail!("no hay pestana Spotify en el Brave depurable")
+}
+
+/// Trae la pestana Spotify al frente (Page.bringToFront).
+/// Desbloquea virtualizadores atorados cuando la ventana esta ocluida
+/// (sin frames no se pintan filas). Puede robar el foco una vez.
+pub(crate) async fn bring_spotify_front() -> Result<()> {
+    let ws_url = spotify_ws_url().await?;
+    cdp_call(&ws_url, 4, "Page.bringToFront", serde_json::json!({})).await?;
+    Ok(())
+}
+
 /// Crea la pestana Spotify via Target.createTarget (browser WS de /json/version).
 async fn create_spotify_target() -> Result<()> {
     let version = fetch_cdp_text("/json/version").await?;

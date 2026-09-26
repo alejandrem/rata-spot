@@ -21,13 +21,21 @@ mod client;
 mod library;
 mod playback;
 mod tabs;
+mod tracks;
 mod transport;
 
 #[cfg(test)]
 mod tests;
 
-pub use library::{play_library_uri, LibraryItem, library_items};
+pub use library::{LibraryItem, library_items};
+/// Solo tests/diagnostico (en binario no-test quedan sin uso).
+#[allow(unused_imports)]
+pub use library::library_diag;
 pub use playback::play_from_scratch;
 #[allow(unused_imports)]
 pub use playback::play_spotify;
 pub use tabs::ensure_spotify_tab;
+/// Solo tests/diagnostico.
+#[allow(unused_imports)]
+pub use tabs::spotify_tab_url;
+pub use tracks::{open_playlist, play_track, playlist_tracks, TrackItem};
