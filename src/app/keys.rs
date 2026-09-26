@@ -125,6 +125,7 @@ pub async fn handle_key(
                 match state.view {
                     View::Library => state.pl_move(1),
                     View::Tracks => state.tr_move(1),
+                    View::Detail => state.lyr_move(1),
                     View::Search => state.sr_move(1),
                 }
             }
@@ -134,6 +135,7 @@ pub async fn handle_key(
                 match state.view {
                     View::Library => state.pl_move(-1),
                     View::Tracks => state.tr_move(-1),
+                    View::Detail => state.lyr_move(-1),
                     View::Search => state.sr_move(-1),
                 }
             }
@@ -210,8 +212,24 @@ pub async fn handle_key(
                         let _ = terminal.draw(|f| crate::ui::render(f, state));
                         match cdp::play_uri(&it.uri, &it.name).await {
                             Ok(_) => {
-                                state.status =
-                                    "▶ reproduciendo, conectando...".to_string()
+                                state.status = "▶ reproduciendo...".to_string();
+                                // Dashboard individual: si tarda o falla, la
+                                // musica sigue; solo se avisa en el panel.
+                                state.detail = None;
+                                state.detail_msg = "cargando dashboard...".to_string();
+                                state.lyr_scroll = 0;
+                                state.view = View::Detail;
+                                let _ = terminal.draw(|f| crate::ui::render(f, state));
+                                match cdp::track_detail().await {
+                                    Ok(d) => {
+                                        state.detail = Some(d);
+                                        state.detail_msg.clear();
+                                    }
+                                    Err(e) => {
+                                        state.detail_msg =
+                                            format!("sin dashboard: {e:.60}");
+                                    }
+                                }
                             }
                             Err(e) => {
                                 state.status = format!("no sono: {e:.60}");
@@ -219,18 +237,26 @@ pub async fn handle_key(
                         }
                     }
                 }
+                // En Detail, →/Enter no hace nada (j/k scrollean letra).
+                View::Detail => {}
             }
         }
         // `/`: enfocar el buscador para escribir (la barra ya esta
-        // visible; no cambia de vista hasta Enter). ← o Esc: biblioteca.
+        // visible; no cambia de vista hasta Enter).
         KeyCode::Char('/') => {
             if is_repeat {
                 return Ok(false);
             }
             state.search_active = true;
         }
-        // ← o Esc: volver a la biblioteca.
-        KeyCode::Left | KeyCode::Esc => state.back_to_library(),
+        // ← o Esc: desde Detail vuelve a resultados; si no, biblioteca.
+        KeyCode::Left | KeyCode::Esc => {
+            if state.view == View::Detail {
+                state.back_to_search();
+            } else {
+                state.back_to_library();
+            }
+        }
         KeyCode::Char('q') => return Ok(true),
         _ => {}
     }

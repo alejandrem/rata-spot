@@ -96,6 +96,33 @@ async fn space_inicia_musica() {
         let _ = crate::gsmtc::pause(&s).await;
     }
 
+    /// Prueba viva del dashboard: abre la pagina del track y lee
+    /// header + letra (solo lee, no reproduce).
+    #[tokio::test]
+    async fn track_detail_se_lee() {
+        if let Err(e) = super::ensure_spotify_tab().await {
+            println!("sin pestana ({e}); salto");
+            return;
+        }
+        super::tracks::open_page("spotify:track:5LHPcY9yd0hWVFIW4yfOCJ")
+            .await
+            .expect("abrir track");
+        let d = super::track_detail().await.expect("leer dashboard");
+        assert!(!d.title.is_empty(), "sin titulo en dashboard");
+        println!(
+            "DASH: {} - {} [{}] album={} plays={} letra={}",
+            d.title,
+            d.artist,
+            d.duration,
+            d.album,
+            d.playcount,
+            d.lyrics.len()
+        );
+        for l in d.lyrics.iter().take(3) {
+            println!("  LY: {l}");
+        }
+    }
+
     /// Diagnostico del DOM (solo imprime, siempre pasa).
     #[tokio::test]
     async fn diag_estado() {

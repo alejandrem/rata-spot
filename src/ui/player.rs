@@ -76,6 +76,8 @@ pub fn render_player(frame: &mut Frame, state: &mut AppState, area: Rect) {
 
     if state.view == View::Tracks {
         render_tracks(frame, state, center[1]);
+    } else if state.view == View::Detail {
+        super::detail::render_detail(frame, state, center[1]);
     } else if state.view == View::Search {
         super::search::render_results(frame, state, center[1]);
     } else {

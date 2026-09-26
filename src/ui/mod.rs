@@ -8,6 +8,7 @@
 //! - player: header, barra de progreso, centro y footer
 //! - sidebar: panel izquierdo con Tu biblioteca (j/k + Enter)
 
+pub mod detail;
 pub mod player;
 pub mod search;
 pub mod sidebar;

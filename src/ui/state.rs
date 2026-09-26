@@ -7,12 +7,13 @@ use ratatui::widgets::ListState;
 use crate::cdp::{LibraryItem, TrackItem};
 use crate::gsmtc::{ProgressSmoother, TrackInfo};
 
-/// Pantalla del panel central: biblioteca, canciones o busqueda.
+/// Pantalla del panel central: biblioteca, canciones, busqueda o dashboard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Library,
     Tracks,
     Search,
+    Detail,
 }
 
 /// Estado que dibuja la TUI. El smoother ya guarda
@@ -46,6 +47,10 @@ pub struct AppState {
     pub sr_index: usize,
     pub sr_state: ListState,
     pub sr_msg: String,
+    /// Dashboard de la rola en reproduccion (vista Detail).
+    pub detail: Option<crate::cdp::TrackDetail>,
+    pub detail_msg: String,
+    pub lyr_scroll: u16,
     /// Throttle de flechas: ultimo movimiento aceptado.
     last_nav: Instant,
 }
@@ -88,6 +93,9 @@ impl AppState {
             sr_index: 0,
             sr_state,
             sr_msg: String::new(),
+            detail: None,
+            detail_msg: String::new(),
+            lyr_scroll: 0,
             last_nav: Instant::now() - NAV_DELAY,
         }
     }
@@ -150,9 +158,25 @@ impl AppState {
         self.results.get(self.sr_index)
     }
 
+    /// Scrollear letra del dashboard (j/k en vista Detail), con tope.
+    pub fn lyr_move(&mut self, delta: i32) {
+        let max = self
+            .detail
+            .as_ref()
+            .map(|d| d.lyrics.len().saturating_sub(1))
+            .unwrap_or(0) as i32;
+        self.lyr_scroll = (self.lyr_scroll as i32 + delta).clamp(0, max.max(0)) as u16;
+    }
+
     /// Volver a la vista biblioteca (← / Esc). Apaga la escritura.
     pub fn back_to_library(&mut self) {
         self.view = View::Library;
+        self.search_active = false;
+    }
+
+    /// Volver a resultados (← / Esc desde Detail, conserva la busqueda).
+    pub fn back_to_search(&mut self) {
+        self.view = View::Search;
         self.search_active = false;
     }
 }

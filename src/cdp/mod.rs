@@ -16,6 +16,7 @@
 //! - playback: click al Play + flujo del primer play
 //! - library: leer "Tu biblioteca"
 //! - search: buscador (/search + lectura de resultados)
+//! - track_page: dashboard individual (header + letra)
 //! - tests: pruebas vivas (primer play + listado)
 
 mod client;
@@ -23,6 +24,7 @@ mod library;
 mod playback;
 mod search;
 mod tabs;
+mod track_page;
 mod tracks;
 mod transport;
 
@@ -42,3 +44,4 @@ pub use tabs::ensure_spotify_tab;
 #[allow(unused_imports)]
 pub use tabs::spotify_tab_url;
 pub use tracks::{open_playlist, play_track, play_uri, playlist_tracks, TrackItem};
+pub use track_page::{track_detail, TrackDetail};
