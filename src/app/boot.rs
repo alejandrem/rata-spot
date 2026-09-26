@@ -8,7 +8,22 @@
 
 use anyhow::Result;
 
-use crate::{gsmtc, launcher};
+use crate::{cdp, gsmtc, launcher};
+
+/// Health-check DOM best-effort (4s): si Spotify ya estaba abierto la
+/// pestana responde y el status dice que selectores viven; recién lanzado
+/// aun esta cargando y queda "pendiente" (no es error).
+async fn dom_note() -> String {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        cdp::health_summary(),
+    )
+    .await
+    {
+        Ok(s) => s,
+        Err(_) => "DOM check pendiente (Spotify cargando)".to_string(),
+    }
+}
 
 pub async fn boot() -> Result<(bool, String)> {
     // Hint del historial: con varias sesiones (video + Spotify), enganchar
@@ -18,19 +33,21 @@ pub async fn boot() -> Result<(bool, String)> {
         .unwrap_or_default();
     let reuse_existing = gsmtc::pick_session(Some(&hint)).await.is_ok();
     if reuse_existing {
+        let dom = dom_note().await;
         Ok((
             true,
-            "Reutilizando sesion Brave existente (ya sonaba Spotify).".to_string(),
+            format!("Reutilizando sesion Brave existente (ya sonaba Spotify). | {dom}"),
         ))
     } else {
         let owned = launcher::launch_brave_spotify().await?;
         let pid = launcher::child_pid()
             .map(|p| p.to_string())
             .unwrap_or_else(|| "?".to_string());
+        let dom = dom_note().await;
         Ok((
             owned,
             format!(
-                "Brave ventana NUEVA visible PID {} | {} | dale play una vez",
+                "Brave ventana NUEVA visible PID {} | {} | dale play una vez | {dom}",
                 pid,
                 launcher::SPOTIFY_URL
             ),

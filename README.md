@@ -95,6 +95,7 @@ el estado real del DOM y GSMTC.
 |---|---|
 | `RATA_SPOT_HIDDEN=1` | Brave oculto fuera de pantalla (debug: visible) |
 | `RATA_SPOT_NOGPU=1` | Prueba `--disable-gpu` (~20MB menos, puede romper Widevine) |
+| `RATA_SPOT_API=0` | Buscador solo por DOM (apaga el intento JSON/red) |
 
 </details>
 
@@ -112,7 +113,7 @@ el estado real del DOM y GSMTC.
 src/
   main.rs        # punto de entrada delgado
   app/           # boot, loop, teclas, sync, biblioteca en fondo, terminal
-  cdp/           # transport, client, tabs, playback, library, search, tracks
+  cdp/           # transport, client, tabs, selectors, api, playback, library, search, tracks
   gsmtc/         # session, track, smoother (free-run), history
   launcher/      # config (flags), process, window (HWND)
   ui/            # player, sidebar, search, tracks, detail, state

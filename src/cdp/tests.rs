@@ -208,6 +208,20 @@ use std::time::Duration;
         }
     }
 
+    /// Health-check de selectores (punto 1): dice que vive y que murio.
+    /// Solo imprime, siempre pasa (sin pestana => "pendiente").
+    #[tokio::test]
+    async fn diag_selectores() {
+        println!("DIAG-SEL: {}", super::health_summary().await);
+    }
+
+    /// Diagnostico de la capa API/red (punto 2): token web + search JSON.
+    /// Solo imprime, siempre pasa (sin pestana/login => lo dice).
+    #[tokio::test]
+    async fn diag_api() {
+        println!("DIAG-API: {}", super::api_diag().await);
+    }
+
     /// Diagnostico de media real: elementos audio/video (paused, muted,
     /// currentTime, errores) + visibilidad. Dice si el audio fluye o no.
     #[tokio::test]

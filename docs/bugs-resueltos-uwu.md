@@ -432,6 +432,34 @@ jajaja.
 
 ---
 
+## 23. Selectores regados + search solo-DOM (blindaje anti-rediseño)
+
+**Síntoma:** cada rediseño de Spotify Web era cacería en 5 archivos, y el
+search dependía 100% del DOM.
+
+**Causa técnica:** los JS vivían duplicados en `playback/library/search/
+tracks/track_page` y el search solo sabía leer anchors del DOM.
+
+**Fix doble:** 1) `src/cdp/selectors.rs`: TODOS los selectores y JS en un
+solo lugar, con cadena de fallback (`data-testid` → `role`+`href` →
+`aria-label` ES/EN, jamás clases hash) + `health_summary()` que corre en
+`boot.rs` y pinta `DOM 6/6 ok` o qué falló. Tests obligan a que el JS
+mencione las consts. 2) `src/cdp/api.rs`: el search intenta JSON/red
+primero (`fetch` dentro de la página con tu login + Web API `/v1/search`,
+tracks primero, cap 24 igual que el DOM) y cae al DOM si falla
+(`RATA_SPOT_API=0` lo apaga). Verificado en vivo: `diag_selectores` da
+6/6 y `diag_api` dice la verdad (`token web status 403` → DOM; la red
+real hoy es `pathfinder/v2` + `clienttoken.spotify.com`, no el endpoint
+viejo). Cero regresiones: lo peor es un HTTP fallido de ms.
+
+**Para bebé:** antes tenías tus juguetes regados por toda la casa y si
+Spotify movía un mueble llorabas buscándolos. Ahora viven en UNA caja
+con etiquetas (selectors) y la rata primero pregunta por teléfono (API)
+antes de ir a buscar a mano (DOM). Y si el teléfono no contesta, va a
+mano como siempre owo.
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
 
 

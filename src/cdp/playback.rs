@@ -8,38 +8,14 @@ use std::time::Duration;
 use anyhow::Result;
 
 use super::client::cdp_call;
+use super::selectors::{PAGE_STATE_JS, PLAY_CLICK_JS};
 use super::tabs::{ensure_spotify_tab, spotify_ws_url};
 
-/// Click al Play probando varios selectores (ES + EN + player bar).
-/// Solo botones VISIBLES y habilitados: querySelector tambien encuentra
-/// los ocultos y clickearlos no suena (click fantasma).
-/// ORDEN: player-bar primero (retoma la cola = semantica de [space]),
-/// heroes despues. Para tocar algo ESPECIFICO usar click_title (tracks.rs),
-/// no esto: el primer visible es loteria con 100+ botones en el DOM.
-/// pub(crate): lo reutiliza tracks.rs tras navegar a una playlist.
-pub(crate) const PLAY_JS: &str = r#"(() => {
-  const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
-  const sels = [
-    '[data-testid="control-button-playpause"]',
-    '[data-testid="play-button"]',
-    'button[aria-label="Reproducir"]',
-    'button[aria-label="Play"]'
-  ];
-  for (const s of sels) {
-    const b = document.querySelector(s);
-    if (vis(b)) { b.click(); return 'clicked:' + s + '|' + (b.getAttribute('aria-label') || '').slice(0, 60); }
-  }
-  const any = [...document.querySelectorAll('button[aria-label="Reproducir"],button[aria-label="Play"]')].find(vis);
-  if (any) { any.click(); return 'clicked:fallback|' + (any.getAttribute('aria-label') || '').slice(0, 60); }
-  return 'no-button';
-})()"#;
-
-/// Diagnostico rapido de la pagina: titulo + hay player + hay login.
-const STATE_JS: &str = r#"(() => {
-  const q = (s) => !!document.querySelector(s);
-  return document.title + ' | play=' + q('[data-testid="control-button-playpause"]')
-    + ' | login=' + (q('[data-testid="login-button"]') || q('a[href*="login"]'));
-})()"#;
+/// Selectores y health-check viven en `super::selectors` (un solo lugar).
+/// Aqui solo la logica de clicks: PLAY_CLICK_JS prueba player-bar primero
+/// (retoma la cola = semantica de [space]), heroes despues. Para tocar algo
+/// ESPECIFICO usar click por titulo (tracks.rs), no esto: el primer visible
+/// es loteria con 100+ botones en el DOM.
 
 /// Hace click al Play de Spotify. OkClick -> la sesion GSMTC aparece sola
 /// y el loop reactivo la toma.
@@ -59,7 +35,7 @@ pub async fn play_spotify() -> Result<String> {
             &ws_url,
             1,
             "Runtime.evaluate",
-            serde_json::json!({ "expression": PLAY_JS, "returnByValue": true }),
+            serde_json::json!({ "expression": PLAY_CLICK_JS, "returnByValue": true }),
         )
         .await?;
         let out = v
@@ -78,7 +54,7 @@ pub async fn play_spotify() -> Result<String> {
                 &ws_url,
                 3,
                 "Runtime.evaluate",
-                serde_json::json!({ "expression": STATE_JS, "returnByValue": true }),
+                serde_json::json!({ "expression": PAGE_STATE_JS, "returnByValue": true }),
             )
             .await
             .ok()

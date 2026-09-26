@@ -7,6 +7,7 @@
 use anyhow::{Context, Result};
 
 use super::client::cdp_call;
+use super::selectors::SEARCH_JS;
 use super::tabs::{spa_navigate, spotify_ws_url};
 
 /// Busca y regresa items mezclados (tracks primero): LibraryItem
@@ -16,8 +17,21 @@ pub async fn search(query: &str) -> Result<Vec<super::LibraryItem>> {
     if q.is_empty() {
         anyhow::bail!("escribe algo primero ( / + texto + Enter )");
     }
+    // 1) JSON/red primero: sin navegar, sin tocar la musica, mas rapido.
+    // Si la API interna cambio o no hay token, cae al DOM como antes.
+    let api_try = tokio::time::timeout(
+        std::time::Duration::from_secs(12),
+        super::api::search_via_api(q),
+    )
+    .await;
+    if let Ok(Ok(items)) = api_try {
+        if !items.is_empty() {
+            return Ok(items);
+        }
+    }
+    // 2) DOM (fallback de siempre).
     // SPA (no Page.navigate): no cortar la musica que suena mientras buscas.
-    let eq = encode(q);
+    let eq = super::api::encode(q);
     spa_navigate(
         &format!("https://open.spotify.com/search/{eq}"),
         &format!("/search/{eq}"),
@@ -76,66 +90,5 @@ async fn search_snapshot() -> Result<Vec<super::LibraryItem>> {
     Ok(items)
 }
 
-/// Lee anchors /track|artist|playlist|album|show fuera del sidebar y del
-/// reproductor (esos contaminarian). Tracks primero, luego el resto.
-const SEARCH_JS: &str = r#"(async () => {
-  let w = 0;
-  const count = () => document.querySelectorAll('main a[href*="/track/"],main a[href*="/artist/"],main a[href*="/playlist/"],main a[href*="/album/"]').length;
-  while (count() < 3 && w < 16) { await new Promise(r => setTimeout(r, 500)); w++; }
-  const out = [];
-  const seen = new Set();
-  const clean = (s) => (s || '').trim().split('\n')[0].trim();
-  // Topes por grupo: sin esto los tracks llenan el cap y nunca se ven
-  // artistas/playlists.
-  let nTr = 0, nOt = 0;
-  const push = (kind, uri, name, sub) => {
-    if (!uri || seen.has(uri) || !name) return;
-    if (kind === 'track' && nTr >= 12) return;
-    if (kind !== 'track' && nOt >= 12) return;
-    if (kind === 'track') nTr++; else nOt++;
-    seen.add(uri);
-    out.push({kind, uri, name, detail: sub || ''});
-  };
-  const inScope = (a) => !a.closest('#Desktop_LeftSidebar_Id')
-    && !a.closest('[data-testid="now-playing-widget"]') && !a.closest('footer');
-  // 1) canciones: titulo del anchor + artistas de su fila.
-  document.querySelectorAll('main a[href*="/track/"]').forEach(a => {
-    if (!inScope(a)) return;
-    const m = a.href.match(/\/(track)\/([A-Za-z0-9]+)/);
-    if (!m) return;
-    const row = a.closest('[role="row"]');
-    const artists = row
-      ? [...row.querySelectorAll('a[href*="/artist/"]')].map(x => clean(x.innerText)).filter(Boolean)
-      : [];
-    push('track', 'spotify:track:' + m[2], clean(a.innerText), artists.join(', '));
-  });
-  // 2) artistas/playlists/albumes/shows (evitar duplicar artistas de filas).
-  const groups = [['artist', '/artist/'], ['playlist', '/playlist/'], ['album', '/album/'], ['show', '/show/']];
-  for (const [kind, pat] of groups) {
-    document.querySelectorAll('main a[href*="' + pat + '"]').forEach(a => {
-      if (!inScope(a)) return;
-      const row = a.closest('[role="row"]');
-      if (row && row.querySelector('a[href*="/track/"]')) return;
-      const esc = pat.replace('/', '\\/');
-      const m = a.href.match(new RegExp(esc + '([A-Za-z0-9]+)'));
-      if (!m) return;
-      push(kind, 'spotify:' + kind + ':' + m[1], clean(a.innerText) || clean(a.getAttribute('aria-label')));
-    });
-  }
-  return JSON.stringify({items: out.slice(0, 24)});
-})()"#;
+// Snapshot JS vive en `super::selectors` (un solo lugar).
 
-/// Encode minimo para URLs (sin crate extra).
-fn encode(q: &str) -> String {
-    let mut out = String::with_capacity(q.len());
-    for b in q.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            b' ' => out.push_str("%20"),
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
