@@ -1,54 +1,17 @@
-//! Interfaz TUI con Ratatui (Fase 4).
-//!
-//! Layout de 4 zonas verticales:
-//!   HEADER   3 lineas — titulo/artista
-//!   PROGRESO 3 lineas — Gauge 1:23 / 3:45
-//!   CENTRO   flexible — estado / album
-//!   FOOTER   1 linea  — keybindings
+//! Columna principal: header, barra de progreso, centro y footer.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
     Frame,
 };
 
-use crate::gsmtc::{ProgressSmoother, TrackInfo};
+use super::state::AppState;
 
-/// Estado que dibuja la TUI. El smoother ya guarda
-/// last_position + last_timestamp para el progreso suave (Fase 3.1).
-pub struct AppState {
-    pub smoother: ProgressSmoother,
-    /// false mientras GSMTC aun no registra sesion Brave.
-    pub connected: bool,
-    /// Diagnostico visible en la TUI (qué Brave lanzamos / PID / URL).
-    /// Los println! de antes quedaban ocultos bajo la pantalla alternativa.
-    pub status: String,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            smoother: ProgressSmoother::new(),
-            connected: false,
-            status: String::new(),
-        }
-    }
-
-    /// Track a mostrar (con posicion/progreso interpolados).
-    pub fn display(&self) -> TrackInfo {
-        self.smoother.display_track()
-    }
-}
-
-pub fn render(frame: &mut Frame, state: &AppState) {
+/// Dibuja header + progreso + centro + footer en `area`.
+pub fn render_player(frame: &mut Frame, state: &AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -57,7 +20,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             Constraint::Min(1),    // centro flexible
             Constraint::Length(1), // footer
         ])
-        .split(frame.size());
+        .split(area);
 
     let track = state.display();
 
@@ -117,7 +80,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     // ---- FOOTER ----
     let footer = Paragraph::new(Line::from(vec![Span::styled(
-        "[space] play/pause  [n] next  [p] prev  [q] quit",
+        "[spc] play [n] sig [p] ant [j/k] lista [enter] tocar [q] salir",
         Style::default().fg(Color::DarkGray),
     )]));
     frame.render_widget(footer, chunks[3]);

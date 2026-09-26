@@ -97,9 +97,39 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
     // los huecos de cambio de cancion son mas cortos y no la disparan).
     let mut track_fail_streak: u8 = 0;
 
+    // Biblioteca en FONDO: leer el DOM tarda segundos (scroll virtualizado);
+    // no bloquear el arranque. La sidebar muestra "cargando..." mientras.
+    let (pl_tx, mut pl_rx) =
+        tokio::sync::mpsc::channel::<Result<Vec<cdp::LibraryItem>, String>>(1);
+    tokio::spawn(async move {
+        for _ in 0..20 {
+            if cdp::ensure_spotify_tab().await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        let res = cdp::library_items()
+            .await
+            .map_err(|e| e.to_string());
+        let _ = pl_tx.send(res).await;
+    });
+
     loop {
+        // Recoger biblioteca cuando el fondo termine (sin bloquear).
+        if let Ok(res) = pl_rx.try_recv() {
+            match res {
+                Ok(items) => {
+                    state.library = items;
+                    state.pl_index = 0;
+                    state.pl_state.select(Some(0));
+                    state.pl_msg.clear();
+                }
+                Err(e) => state.pl_msg = format!("biblioteca: {e}"),
+            }
+        }
+
         // a. Dibujar (si no conectado, el centro muestra "Conectando...").
-        terminal.draw(|f| ui::render(f, &state))?;
+        terminal.draw(|f| ui::render(f, &mut state))?;
 
         // b. Poll 250ms: balance responsividad/CPU (no <100ms ni >1000ms).
         // c. Teclado.
@@ -116,7 +146,7 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                             state.status = "▶ iniciando Spotify...".to_string();
                             // Redibujar ANTES del await (el click tarda segundos
                             // y el loop se queda esperando aqui).
-                            let _ = terminal.draw(|f| ui::render(f, &state));
+                            let _ = terminal.draw(|f| ui::render(f, &mut state));
                             match cdp::play_from_scratch().await {
                                 Ok(_) => {
                                     state.status =
@@ -145,6 +175,38 @@ async fn run_app(terminal: &mut Tui, was_already_running: bool, boot_status: Str
                     KeyCode::Char('p') => {
                         if let Some(ref s) = session {
                             let _ = gsmtc::prev(s).await;
+                        }
+                    }
+                    // Biblioteca (sidebar izquierda del DOM).
+                    KeyCode::Char('j') | KeyCode::Down => state.pl_move(1),
+                    KeyCode::Char('k') | KeyCode::Up => state.pl_move(-1),
+                    KeyCode::Char('l') => {
+                        // Recargar biblioteca a mano (por si se abrio tarde).
+                        state.pl_msg = "cargando biblioteca...".to_string();
+                        let _ = terminal.draw(|f| ui::render(f, &mut state));
+                        match cdp::library_items().await {
+                            Ok(items) => {
+                                state.library = items;
+                                state.pl_index = 0;
+                                state.pl_state.select(Some(0));
+                                state.pl_msg.clear();
+                            }
+                            Err(e) => state.pl_msg = format!("biblioteca: {e}"),
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(item) = state.pl_selected().cloned() {
+                            state.status =
+                                format!("▶ abriendo {}...", item.name);
+                            let _ = terminal.draw(|f| ui::render(f, &mut state));
+                            match cdp::play_library_uri(&item.uri).await {
+                                Ok(_) => {
+                                    state.status = "▶ reproduciendo, conectando...".to_string()
+                                }
+                                Err(e) => {
+                                    state.status = format!("no sono: {e:.60}");
+                                }
+                            }
                         }
                     }
                     KeyCode::Char('q') => break,
