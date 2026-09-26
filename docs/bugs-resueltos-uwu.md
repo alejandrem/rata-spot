@@ -251,4 +251,187 @@ que hay que buscar otro perrito jajaja (perdón, bebé).
 
 ---
 
+## 14. Pausa fantasma: 1 tap pausaba y se despausaba solo
+
+**Síntoma:** un click a `space` pausaba solo mientras lo sostenías; al
+soltar volvía a sonar. Sostenerla = flicker aleatorio.
+
+**Causa técnica:** el handler hacía `match key.code` ignorando `key.kind`,
+y crossterm 0.27 en Windows emite Press + Repeat + Release por tecla (sin
+filtrar nada). 1 tap = Press(toggle pausa) + Release(toggle play) = neto
+cero. Sostener = N+2 toggles = estado final aleatorio. De paso `n`/`p`
+saltaban 2 rolas por tap sin que nadie lo notara.
+
+**Fix:** ignorar `Release` en todo; `Repeat` solo en flechas/`j/k` (con el
+throttle de 120ms); acciones (`space/n/p/enter/l`) solo en `Press`.
+
+**Para bebé:** cada que aplaudías una vez, un duende aplaudía otra vez por
+ti y se cancelaba el aplauso jajaja. Ahora al duende se le dice "shhh" en
+los Release y solo cuenta tu aplauso owo.
+
+---
+
+## 15. Barra congelada con GSMTC clavado en ~40ms
+
+**Síntoma:** sonando, la barra clavada en 0:00; solo se movía al pausar.
+
+**Causa técnica:** verificado en vivo (`diag_gsmtc`): `playing=true`,
+duración OK (202s), pero `Position` clavado en 39.525ms en 6 segundos.
+Spotify a veces NUNCA actualiza el timeline. El interpolador anterior lo
+reseteaba con el mismo valor congelado en cada tick.
+
+**Fix:** modo *free-run* en `ProgressSmoother::update`: si sonando la
+posición nueva difiere <500ms de la guardada, NO se resetea el reloj y se
+sigue interpolando con `elapsed()`. Solo saltos reales (>500ms: ráfagas,
+seek, cambio de rola) resincronizan. Funciona igual para Spotify sano, a
+ráfagas o congelado. Tests: `free_run`, `pausa_congela`, `salto_resincroniza`.
+
+**Para bebé:** el velocímetro estaba pegado en 0 porque el cable del sensor
+no mandaba nada. Ahora cuando el cable se calla, la rata calcula sola con
+su relojito, y si el cable vuelve a hablar le hace caso uwu.
+
+---
+
+## 16. Enter (buscar/abrir) pausaba la rola que sonaba
+
+**Síntoma:** flujo `/` → escribo → Enter → la música actual se cortaba;
+solo volvía a sonar la nueva después.
+
+**Causa técnica:** `search()`, `open_playlist()` y `play_uri()` usaban
+`Page.navigate`, que RECARGA el documento y destruye el elemento de audio.
+Cada Enter mataba el stream antes de empezar el nuevo.
+
+**Fix:** `spa_navigate()` en `cdp/tabs.rs`: `history.pushState` +
+`PopStateEvent` para que React Router cambie de vista SIN destruir el
+reproductor (igual que clickear un link a mano). Si la ruta no cambia en
+~2s, fallback a `Page.navigate`. Verificado con test
+`busqueda_no_corta_musica` (misma rola antes/después de buscar).
+
+**Para bebé:** cada Enter era como cambiar de casa tirando la anterior con
+todo y estéreo adentro. Ahora es como caminar a otro cuarto: la música te
+sigue sonando hasta que pones la nueva jajaja.
+
+---
+
+## 17. Click lotería: sonó ZAPATA pidiendo Pika Pika
+
+**Síntoma:** el test pedía Pika Pika y la verificación encontraba ZAPATA
+sonando. El click "exitoso" había prendido otra cosa.
+
+**Causa técnica:** en el DOM hay 100+ botones "Reproducir X" y el código
+clickeaba el primero visible (`document.querySelector`). Lotería total.
+
+**Fix:** click POR TÍTULO: se busca el botón cuyo `aria-label` contenga el
+título esperado (con `scrollIntoView` si está virtualizado). Si no existe,
+se reporta en vez de clickear al azar. Probado con inventario DOM
+(`diag_play_buttons`) que mostró al culpable.
+
+**Para bebé:** gritabas "¡pon Pika Pika!" en un cuarto con 100 botones y el
+robot apretaba el primero que veía. Ahora lee las etiquetas y aprieta el
+que dice Pika Pika owo.
+
+---
+
+## 18. Click untrusted no arranca audio (ni el trusted de mouse, a veces)
+
+**Síntoma:** click entregado OK al botón correcto... y silencio. Ni sesión
+GSMTC aparecía.
+
+**Causa técnica:** `.click()` por JS es evento *untrusted* (sin user
+activation) y Spotify no inicia streams nuevos así. El click por
+coordenadas (`Input.dispatchMouseEvent`) funcionó unas veces y otras no.
+
+**Fix:** tecla **Espacio real** por CDP (`Input.dispatchKeyEvent`
+keyDown+keyUp) = exactamente lo que haría tu dedo, con user activation.
+`play_uri` ahora: si el player dice Pausar con sesión → listo; si dice
+Pausar sin sesión (wedged) → recarga; si no → Space + espera registro
+GSMTC (3s antes de reintentar, para no pausar lo recién prendido).
+Probado en vivo: `SUENA: Pika Pika [0:00 / 2:28]`.
+
+**Para bebé:** era como tocar la puerta con guantes de fantasma: la puerta
+oía el toc-toc pero no abría porque no sentía mano de verdad. Ahora
+mandamos una manita de verdad (tecla Espacio) y sí abren jajaja.
+
+---
+
+## 19. Un video de Facebook secuestraba la sesión (y los tests)
+
+**Síntoma:** el test pedía Pika Pika, todo "en verde"... pero lo que sonaba
+era un video de Facebook ("Claude Code en Español"). `get_brave_session`
+agarraba la PRIMERA sesión Brave sonando, fuera la que fuera.
+
+**Causa técnica:** GSMTC no dice de qué pestaña viene cada sesión. Con tu
+Brave normal + el nuestro conviviendo, cualquier video con audio compite.
+
+**Fix triple:** `brave_sessions()` (todas) + `pick_session(hint)` ( boot
+prefiere la que coincida con tu historial) + switch anti-oscilación en el
+tick (~1s): si la actual está pausada y OTRA flippeó a sonando, cambiarse;
+con la actual sonando jamás se cambia (imposible oscilar). Tests estrictos
+por título en vez de "cualquier sesión".
+
+**Para bebé:** el control remoto agarraba la primera tele prendida, aunque
+fuera la del vecino viendo Facebook. Ahora pregunta "¿cuál se prendió
+al último?" y si la tuya estaba pausada, cambia a la nueva. Y nunca brinca
+como loco entre teles owo.
+
+---
+
+## 20. Player wedged: UI en "Pausar" sin audio ni `<audio>`
+
+**Síntoma:** la página juraba que sonaba (botones en "Pausar") pero no
+había ni elementos `<audio>` en el DOM ni sesión GSMTC. Clicks al vacío.
+
+**Causa técnica:** verificado con `diag_media`: reproductor en estado
+imposible (intento de play anterior atorado a medias). Probable vendor:
+navegaciones rápidas de los tests + recaptcha Enterprise al acecho.
+
+**Fix:** `player_stuck()` lo detecta (Pausar + 0 media + 0 sesiones) y
+`play_uri` recarga la pestaña antes de clickear. Solo cuando nada suena
+(jamás interrumpe tu música).
+
+**Para bebé:** el estéreo decía "SONANDO" con foquitos prendidos pero sin
+bocinas conectadas jajaja. Se detecta el estéreo fantasma, se desconecta
+y se vuelve a conectar, y ya suena de verdad.
+
+---
+
+## 21. `/json/list` a veces flap ea vacío + tabs que se evaporan
+
+**Síntoma:** a mitad de un flujo, "no hay pestana Spotify" aunque existía
+un segundo antes (pestañas cerradas a mano, renderer crasheado, lista
+flappeando).
+
+**Causa técnica:** el WS se resolvía UNA vez al inicio del flujo y se
+reusaba; si la pestaña moría o la lista flappeaba, todo lo demás fallaba
+en cascada.
+
+**Fix:** WS fresco por intento en los 4 loops (play, tracks, playlist,
+open), `ensure_spotify_tab()` al inicio de cada flujo (recrea la pestaña
+si falta, sin duplicar) y reintentos con timeout en todo (8s fetch, 5s
+WS, 12/30s lecturas).
+
+**Para bebé:** antes anotabas el número de tu amigo una vez y si cambiaba
+de número ya no le atinabas nunca. Ahora preguntas el número fresh cada
+vez que marcas, y si no existe lo vuelves a invitar owo.
+
+---
+
+## 22. Tests ruidosos: la suite te despertaba con Pika Pika
+
+**Síntoma:** `cargo test` a secas sonaba música, navegaba tu Brave y te
+asustaba a media noche. Además medía lo que TÚ mirabas (stories) en vez
+de Spotify.
+
+**Fix:** los tests que suenan/navegan llevan `#[ignore]`: `cargo test` =
+silenciosos y deterministas; `cargo test -- --include-ignored` = vivos
+con manos fuera 1 minuto. Los de lectura/diag siguen corriendo siempre.
+
+**Para bebé:** la alarma de pruebas gritaba a las 3am con tu canción.
+Ahora tiene modo silencioso por default y modo fiesta solo si lo pides
+jajaja.
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
+
+
