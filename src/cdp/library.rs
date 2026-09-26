@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use super::client::cdp_call;
 use super::tabs::{bring_spotify_front, spotify_ws_url};
 
 /// Un item de "Tu biblioteca": playlist, artista, album o podcast.
@@ -76,7 +75,8 @@ async fn renavigate_home() -> Result<()> {
 
 async fn library_snapshot() -> Result<(Vec<LibraryItem>, bool)> {
     let ws_url = spotify_ws_url().await?;
-    let v = cdp_call(
+    // Snapshot con scroll: tarda 10s+ legitimos en bibliotecas grandes.
+    let v = super::client::cdp_call_t(
         &ws_url,
         10,
         "Runtime.evaluate",
@@ -85,6 +85,7 @@ async fn library_snapshot() -> Result<(Vec<LibraryItem>, bool)> {
             "returnByValue": true,
             "awaitPromise": true,
         }),
+        30,
     )
     .await?;
     let payload = v

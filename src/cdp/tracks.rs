@@ -78,7 +78,8 @@ pub async fn playlist_tracks() -> Result<Vec<TrackItem>> {
 
 async fn tracks_snapshot() -> Result<Vec<TrackItem>> {
     let ws_url = spotify_ws_url().await?;
-    let v = cdp_call(
+    // Snapshot con scroll: 30s para playlists grandes en maquinas lentas.
+    let v = super::client::cdp_call_t(
         &ws_url,
         31,
         "Runtime.evaluate",
@@ -87,6 +88,7 @@ async fn tracks_snapshot() -> Result<Vec<TrackItem>> {
             "returnByValue": true,
             "awaitPromise": true,
         }),
+        30,
     )
     .await?;
     let payload = v
