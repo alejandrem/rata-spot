@@ -63,7 +63,7 @@ pub fn render_sidebar(frame: &mut Frame, state: &mut AppState, area: Rect) {
     frame.render_stateful_widget(list, area, &mut state.pl_state);
 }
 
-fn kind_icon(kind: &str) -> &'static str {
+pub(crate) fn kind_icon(kind: &str) -> &'static str {
     match kind {
         "playlist" => "🎵",
         "artist" => "🎤",

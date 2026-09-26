@@ -32,6 +32,42 @@ pub async fn handle_key(
         return Ok(false);
     }
     let is_repeat = key.kind == KeyEventKind::Repeat;
+    // Modo escritura: si el buscador esta enfocado, todo va al query
+    // (desde cualquier vista: la barra siempre esta visible).
+    // Si no, space pausaria mientras escribes.
+    if state.search_active {
+        match key.code {
+            KeyCode::Esc => state.back_to_library(),
+            KeyCode::Enter => {
+                state.search_active = false;
+                state.view = View::Search;
+                let q = state.search_query.clone();
+                state.results.clear();
+                state.sr_index = 0;
+                state.sr_state.select(Some(0));
+                state.sr_msg = "buscando...".to_string();
+                let _ = terminal.draw(|f| crate::ui::render(f, state));
+                match cdp::search(&q).await {
+                    Ok(items) => {
+                        state.results = items;
+                        state.sr_index = 0;
+                        state.sr_state.select(Some(0));
+                        state.sr_msg.clear();
+                    }
+                    Err(e) => state.sr_msg = format!("busqueda: {e:.80}"),
+                }
+            }
+            KeyCode::Backspace => {
+                state.search_query.pop();
+            }
+            KeyCode::Char(c) => {
+                // Escribiendo SI se acepta Repeat (tecla pegada).
+                state.search_query.push(c);
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
     match key.code {
         KeyCode::Char(' ') => {
             if is_repeat {
@@ -82,13 +118,14 @@ pub async fn handle_key(
                 let _ = gsmtc::prev(s).await;
             }
         }
-        // Biblioteca (sidebar) y canciones (centro).
+        // Biblioteca (sidebar), canciones y resultados (centro).
         // Flechas con throttle: sostenida avanza legible.
         KeyCode::Char('j') | KeyCode::Down => {
             if state.nav_ok() {
                 match state.view {
                     View::Library => state.pl_move(1),
                     View::Tracks => state.tr_move(1),
+                    View::Search => state.sr_move(1),
                 }
             }
         }
@@ -97,6 +134,7 @@ pub async fn handle_key(
                 match state.view {
                     View::Library => state.pl_move(-1),
                     View::Tracks => state.tr_move(-1),
+                    View::Search => state.sr_move(-1),
                 }
             }
         }
@@ -117,8 +155,8 @@ pub async fn handle_key(
                 Err(e) => state.pl_msg = format!("biblioteca: {e}"),
             }
         }
-        // → o Enter: en biblioteca abre las canciones de la
-        // playlist; en canciones toca la rola elegida.
+        // → o Enter: en biblioteca abre canciones; en canciones o
+        // resultados toca lo elegido.
         KeyCode::Right | KeyCode::Enter => {
             if is_repeat {
                 return Ok(false);
@@ -166,7 +204,30 @@ pub async fn handle_key(
                         }
                     }
                 }
+                View::Search => {
+                    if let Some(it) = state.sr_selected().cloned() {
+                        state.status = format!("▶ tocando {}...", it.name);
+                        let _ = terminal.draw(|f| crate::ui::render(f, state));
+                        match cdp::play_uri(&it.uri, &it.name).await {
+                            Ok(_) => {
+                                state.status =
+                                    "▶ reproduciendo, conectando...".to_string()
+                            }
+                            Err(e) => {
+                                state.status = format!("no sono: {e:.60}");
+                            }
+                        }
+                    }
+                }
             }
+        }
+        // `/`: enfocar el buscador para escribir (la barra ya esta
+        // visible; no cambia de vista hasta Enter). ← o Esc: biblioteca.
+        KeyCode::Char('/') => {
+            if is_repeat {
+                return Ok(false);
+            }
+            state.search_active = true;
         }
         // ← o Esc: volver a la biblioteca.
         KeyCode::Left | KeyCode::Esc => state.back_to_library(),

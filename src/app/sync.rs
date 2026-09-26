@@ -8,6 +8,7 @@
 //! Contadores en u32: el u8 anterior podia hacer overflow en debug
 //! si desconectado >40s (panic por overflow en dev).
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::{
@@ -20,6 +21,13 @@ pub struct SyncState {
     saved_title: String,
     fail_streak: u32,
     retry_ticks: u32,
+    /// Backoff exponencial en ticks (4 ticks = 1s): 4, 8, 16, 32.
+    /// Sin esto se martilla COM cada 1s eternamente cuando Brave murio.
+    cooldown_ticks: u32,
+    backoff_step: u32,
+    /// Ultimo estado visto por titulo (para detectar que sesion cambio).
+    seen: HashMap<String, bool>,
+    scan_ticks: u32,
     last_raw_pos: Duration,
     last_good_dur: Duration,
     last_good_title: String,
@@ -31,6 +39,10 @@ impl SyncState {
             saved_title,
             fail_streak: 0,
             retry_ticks: 99,
+            cooldown_ticks: 0,
+            backoff_step: 0,
+            seen: HashMap::new(),
+            scan_ticks: 0,
             last_raw_pos: Duration::ZERO,
             last_good_dur: Duration::ZERO,
             last_good_title: String::new(),
@@ -45,14 +57,25 @@ pub async fn tick_gsmtc(
     session: &mut Option<gsmtc::Session>,
     sync: &mut SyncState,
 ) {
-    // Conexion inicial / reconexion (loop reactivo Fase 3.2).
+    // Conexion inicial / reconexion con backoff exponencial:
+    // intento inmediato, luego 1s, 2s, 4s, 8s (tope). Sin backoff se
+    // martilla COM cada 1s eternamente cuando Brave murio.
     if session.is_none() {
+        if sync.cooldown_ticks > 0 {
+            sync.cooldown_ticks -= 1;
+            return;
+        }
         sync.retry_ticks += 1;
         if sync.retry_ticks >= 4 {
             sync.retry_ticks = 0;
             if let Ok(s) = gsmtc::get_brave_session().await {
                 *session = Some(s);
                 state.connected = true;
+                sync.cooldown_ticks = 0;
+                sync.backoff_step = 0;
+            } else {
+                sync.cooldown_ticks = 4u32.saturating_mul(1 << sync.backoff_step.min(3));
+                sync.backoff_step = sync.backoff_step.saturating_add(1);
             }
         }
         return;
@@ -87,6 +110,15 @@ pub async fn tick_gsmtc(
                     sync.saved_title = fresh.title.clone();
                     gsmtc::save_last_track(&fresh);
                 }
+                // Multi-sesion (~1s): si la actual esta pausada y OTRA
+                // cambio a sonando (ej. diste Enter y empezo Spotify
+                // mientras un video sonaba), cambiarse a ella. No oscila:
+                // con la actual sonando jamas se cambia.
+                sync.scan_ticks += 1;
+                if sync.scan_ticks >= 4 && !fresh.playing {
+                    sync.scan_ticks = 0;
+                    switch_if_changed(state, session, sync, &fresh.title).await;
+                }
             }
             Err(_) => {
                 // Sin metadata momentanea (cambio de cancion): conservar
@@ -101,5 +133,40 @@ pub async fn tick_gsmtc(
                 }
             }
         }
+    }
+}
+
+/// Cambia a otra sesion Brave solo si FLIPPEO a sonando y no es la actual.
+/// Anti-oscilacion: con la actual sonando jamas se cambia; el mapa `seen`
+/// recuerda playing por titulo entre escaneos (~1s).
+async fn switch_if_changed(
+    state: &mut AppState,
+    session: &mut Option<gsmtc::Session>,
+    sync: &mut SyncState,
+    cur_title: &str,
+) {
+    let all = match gsmtc::brave_sessions().await {
+        Ok(a) if a.len() > 1 => a,
+        _ => return, // 0-1 sesiones: nada que elegir
+    };
+    let cur_key = cur_title.to_lowercase();
+    let mut candidate: Option<gsmtc::Session> = None;
+    for s in &all {
+        let (playing, title) = match gsmtc::get_track(s).await {
+            Ok(t) => (t.playing, t.title.to_lowercase()),
+            Err(_) => continue,
+        };
+        let was = sync.seen.get(&title).copied();
+        sync.seen.insert(title.clone(), playing);
+        if playing && was != Some(true) && title != cur_key {
+            candidate = Some(s.clone());
+        }
+    }
+    if sync.seen.len() > 40 {
+        sync.seen.clear();
+    }
+    if let Some(s) = candidate {
+        *session = Some(s);
+        state.connected = true;
     }
 }

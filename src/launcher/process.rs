@@ -60,6 +60,12 @@ pub async fn launch_brave_spotify() -> Result<bool> {
     });
     // Ventana nueva e independiente del mismo navegador (no pestaña).
     cmd.arg("--new-window");
+    // Fase 5.4 (OPCIONAL, solo prueba A/B de RAM): RATA_SPOT_NOGPU=1 agrega
+    // --disable-gpu (~15-25MB menos PERO puede romper Widevine: audio
+    // cortado o que no suene). Probar 2-3 rolas; si falla, quitar la env.
+    if std::env::var("RATA_SPOT_NOGPU").map(|v| v == "1").unwrap_or(false) {
+        cmd.arg("--disable-gpu");
+    }
     cmd.arg(SPOTIFY_URL);
     cmd.stdout(Stdio::null())
         .stderr(Stdio::null())

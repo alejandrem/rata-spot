@@ -13,7 +13,10 @@ use super::tabs::{ensure_spotify_tab, spotify_ws_url};
 /// Click al Play probando varios selectores (ES + EN + player bar).
 /// Solo botones VISIBLES y habilitados: querySelector tambien encuentra
 /// los ocultos y clickearlos no suena (click fantasma).
-/// pub(crate): lo reutiliza library.rs tras navegar a una playlist.
+/// ORDEN: player-bar primero (retoma la cola = semantica de [space]),
+/// heroes despues. Para tocar algo ESPECIFICO usar click_title (tracks.rs),
+/// no esto: el primer visible es loteria con 100+ botones en el DOM.
+/// pub(crate): lo reutiliza tracks.rs tras navegar a una playlist.
 pub(crate) const PLAY_JS: &str = r#"(() => {
   const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
   const sels = [
@@ -24,10 +27,10 @@ pub(crate) const PLAY_JS: &str = r#"(() => {
   ];
   for (const s of sels) {
     const b = document.querySelector(s);
-    if (vis(b)) { b.click(); return 'clicked:' + s; }
+    if (vis(b)) { b.click(); return 'clicked:' + s + '|' + (b.getAttribute('aria-label') || '').slice(0, 60); }
   }
   const any = [...document.querySelectorAll('button[aria-label="Reproducir"],button[aria-label="Play"]')].find(vis);
-  if (any) { any.click(); return 'clicked:fallback'; }
+  if (any) { any.click(); return 'clicked:fallback|' + (any.getAttribute('aria-label') || '').slice(0, 60); }
   return 'no-button';
 })()"#;
 
@@ -43,8 +46,15 @@ const STATE_JS: &str = r#"(() => {
 /// La pagina fresca tarda en renderizar el player: reintenta el click
 /// hasta 15s. Si no aparece, diagnostica que muestra (login vs cargando).
 pub async fn play_spotify() -> Result<String> {
-    let ws_url = spotify_ws_url().await?;
     for _ in 0..30 {
+        // WS fresco por intento: /json/list a veces flap ea vacio un momento.
+        let ws_url = match spotify_ws_url().await {
+            Ok(u) => u,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        };
         let v = cdp_call(
             &ws_url,
             1,
@@ -62,20 +72,25 @@ pub async fn play_spotify() -> Result<String> {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let state = cdp_call(
-        &ws_url,
-        3,
-        "Runtime.evaluate",
-        serde_json::json!({ "expression": STATE_JS, "returnByValue": true }),
-    )
-    .await
-    .ok()
-    .and_then(|v| {
-        v.pointer("/result/result/value")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string())
-    })
-    .unwrap_or_else(|| "?".to_string());
+    let state = match spotify_ws_url().await {
+        Ok(ws_url) => {
+            cdp_call(
+                &ws_url,
+                3,
+                "Runtime.evaluate",
+                serde_json::json!({ "expression": STATE_JS, "returnByValue": true }),
+            )
+            .await
+            .ok()
+            .and_then(|v| {
+                v.pointer("/result/result/value")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "?".to_string())
+        }
+        Err(_) => "sin pestana al diagnosticar".to_string(),
+    };
     anyhow::bail!("pagina sin boton Play visible [{state}] (¿logueado? ¿cargo?)");
 }
 

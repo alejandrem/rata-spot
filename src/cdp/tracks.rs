@@ -12,7 +12,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 use super::client::cdp_call;
-use super::tabs::spotify_ws_url;
+use super::tabs::{ensure_spotify_tab, spotify_ws_url};
 
 /// Una rola del tracklist: numero, titulo, artistas, duracion y track id.
 #[derive(Debug, Clone)]
@@ -24,13 +24,16 @@ pub struct TrackItem {
     pub id: String,
 }
 
-/// Navega la pestana a la pagina del URI (playlist/album/...) SIN dar play.
-/// Despues se leen las rolas con `playlist_tracks()`.
-pub async fn open_playlist(uri: &str) -> Result<()> {
+/// Navega la pestana a la pagina del URI, sin esperar nada.
+/// Base de open_playlist (espera grid) y play_uri (espera Play).
+pub async fn open_page(uri: &str) -> Result<()> {
     let mut parts = uri.split(':');
     let kind = parts.nth(1).context("URI sin kind")?;
     let id = parts.next().context("URI sin id")?;
     let url = format!("https://open.spotify.com/{kind}/{id}");
+    // Self-healing: si la pestana se cerro (usuario o crash renderer),
+    // recrearla en vez de morir (el fallo transitorio no avisa).
+    ensure_spotify_tab().await?;
     let ws_url = spotify_ws_url().await?;
     super::client::cdp_call(
         &ws_url,
@@ -39,10 +42,22 @@ pub async fn open_playlist(uri: &str) -> Result<()> {
         serde_json::json!({ "url": url }),
     )
     .await?;
-    // Esperar a que el tracklist exista antes de regresar (hasta 10s).
-    // Sin esto, el lector llegaba con la pagina a medias (o con otra
-    // navegacion en curso) y devolvia no-tracklist.
+    Ok(())
+}
+
+/// Abre una playlist y espera su tracklist (hasta 10s).
+/// Sin esto, el lector llegaba con la pagina a medias y devolvia vacio.
+pub async fn open_playlist(uri: &str) -> Result<()> {
+    open_page(uri).await?;
     for _ in 0..20 {
+        // WS fresco por intento (ver play_uri).
+        let ws_url = match spotify_ws_url().await {
+            Ok(u) => u,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        };
         let v = super::client::cdp_call(
             &ws_url,
             31,
@@ -178,10 +193,85 @@ const TRACKS_JS: &str = r#"(async () => {
   return JSON.stringify({total, tracks:[...out.values()]});
 })()"#;
 
-/// Toca una rola por su track id: busca su fila (scrolleando si esta
-/// virtualizada), le hace scrollIntoView y click a su boton Reproducir.
-/// Suena en contexto de la playlist abierta.
+/// Reproduce un URI por TITULO (determinista): navega a su pagina y
+/// clickea el boton cuyo aria-label contenga el titulo con un click
+/// CONFIABLE (Input.dispatchMouseEvent = input real con user activation).
+/// El .click() por JS es "untrusted" y Spotify no arranca audio con el.
+pub async fn play_uri(uri: &str, title: &str) -> Result<String> {
+    open_page(uri).await?;
+    // Titulo como argumento IIFE: evita escapar selectores CSS.
+    let esc = title.replace('\\', "\\\\").replace('"', "\\\"");
+    let find_js = format!(
+        r#"((title) => {{
+          const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
+          const all = [...document.querySelectorAll('button[data-testid="play-button"],button[aria-label^="Reproducir"],button[aria-label^="Play"]')];
+          const mine = all.find(b => vis(b) && (b.getAttribute('aria-label') || '').includes(title));
+          if (mine) {{
+            const r = mine.getBoundingClientRect();
+            return JSON.stringify({{click: true, x: r.x + r.width / 2, y: r.y + r.height / 2}});
+          }}
+          const hid = all.find(b => (b.getAttribute('aria-label') || '').includes(title));
+          if (hid) {{ hid.scrollIntoView({{block:'center'}}); return JSON.stringify({{scrolled: true}}); }}
+          return JSON.stringify({{none: true}});
+        }})("{esc}")"#
+    );
+    for _ in 0..30 {
+        // WS fresco por intento: /json/list a veces flap ea vacio un momento.
+        let ws_url = match spotify_ws_url().await {
+            Ok(u) => u,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        };
+        let v = super::client::cdp_call(
+            &ws_url,
+            22,
+            "Runtime.evaluate",
+            serde_json::json!({ "expression": find_js, "returnByValue": true }),
+        )
+        .await?;
+        let raw = v
+            .pointer("/result/result/value")
+            .and_then(|x| x.as_str())
+            .unwrap_or("{}")
+            .to_string();
+        let hit: serde_json::Value =
+            serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
+        if hit.get("click").and_then(|x| x.as_bool()) == Some(true) {
+            let x = hit.get("x").and_then(|n| n.as_f64()).unwrap_or(0.0);
+            let y = hit.get("y").and_then(|n| n.as_f64()).unwrap_or(0.0);
+            trusted_click(&ws_url, x, y).await?;
+            return Ok("clicked-trusted".to_string());
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    anyhow::bail!("no pude tocar '{title}' (¿saliste de su pagina?)");
+}
+
+/// Click real a coordenadas del viewport: el navegador lo ve como input
+/// de usuario (trusted), con user activation para el audio.
+async fn trusted_click(ws_url: &str, x: f64, y: f64) -> Result<()> {
+    for typ in ["mousePressed", "mouseReleased"] {
+        super::client::cdp_call(
+            ws_url,
+            23,
+            "Input.dispatchMouseEvent",
+            serde_json::json!({
+                "type": typ,
+                "x": x,
+                "y": y,
+                "button": "left",
+                "clickCount": 1,
+            }),
+        )
+        .await?;
+    }
+    Ok(())
+}
 pub async fn play_track(track_id: &str) -> Result<String> {
+    // Self-healing igual que open_page (pestana cerrada a media sesion).
+    ensure_spotify_tab().await?;
     let ws_url = spotify_ws_url().await?;
     // id alfanumerico de Spotify: seguro para interpolar en el JS.
     if !track_id.chars().all(|c| c.is_ascii_alphanumeric()) {
@@ -218,6 +308,14 @@ pub async fn play_track(track_id: &str) -> Result<String> {
           const b = g ? g.closest('[data-overlayscrollbars-viewport]') : null;
           if (!b) return 'no-box'; b.scrollTop += 800; return 'ok'; })()"#;
     for _ in 0..40 {
+        // WS fresco por intento (ver play_uri).
+        let ws_url = match spotify_ws_url().await {
+            Ok(u) => u,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        };
         let v = cdp_call(
             &ws_url,
             32,

@@ -14,12 +14,14 @@
 //! - client: llamada WS generica {id, method, params}
 //! - tabs: localizar/crear la pestana Spotify
 //! - playback: click al Play + flujo del primer play
-//! - library: leer "Tu biblioteca" + reproducir por URI
+//! - library: leer "Tu biblioteca"
+//! - search: buscador (/search + lectura de resultados)
 //! - tests: pruebas vivas (primer play + listado)
 
 mod client;
 mod library;
 mod playback;
+mod search;
 mod tabs;
 mod tracks;
 mod transport;
@@ -32,10 +34,11 @@ pub use library::{LibraryItem, library_items};
 #[allow(unused_imports)]
 pub use library::library_diag;
 pub use playback::play_from_scratch;
+pub use search::search;
 #[allow(unused_imports)]
 pub use playback::play_spotify;
 pub use tabs::ensure_spotify_tab;
 /// Solo tests/diagnostico.
 #[allow(unused_imports)]
 pub use tabs::spotify_tab_url;
-pub use tracks::{open_playlist, play_track, playlist_tracks, TrackItem};
+pub use tracks::{open_playlist, play_track, play_uri, playlist_tracks, TrackItem};

@@ -66,11 +66,20 @@ pub fn render_player(frame: &mut Frame, state: &mut AppState, area: Rect) {
         .label(track.format_time());
     frame.render_widget(gauge, chunks[1]);
 
-    // ---- CENTRO: canciones de la playlist o estado ----
+    // ---- CENTRO: buscador SIEMPRE visible + contenido ----
+    // (La barra no se oculta nunca: `/` solo la enfoca para escribir.)
+    let center = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(1)])
+        .split(chunks[2]);
+    super::search::render_search_bar(frame, state, center[0]);
+
     if state.view == View::Tracks {
-        render_tracks(frame, state, chunks[2]);
+        render_tracks(frame, state, center[1]);
+    } else if state.view == View::Search {
+        super::search::render_results(frame, state, center[1]);
     } else {
-        let center_text = if !state.connected {
+        let status_text = if !state.connected {
             if state.status.is_empty() {
                 "Conectando con Spotify...".to_string()
             } else {
@@ -81,14 +90,14 @@ pub fn render_player(frame: &mut Frame, state: &mut AppState, area: Rect) {
         } else {
             format!("💿 {}", track.album)
         };
-        let center =
-            Paragraph::new(center_text).style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(center, chunks[2]);
+        let status =
+            Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(status, center[1]);
     }
 
     // ---- FOOTER ----
     let footer = Paragraph::new(Line::from(vec![Span::styled(
-        "[spc] play [n] sig [p] ant [j/k] mover [→] canciones [←] volver [q] salir",
+        "[/] buscar [spc] play [n] sig [p] ant [j/k] mover [→] ver [←] volver [q] salir",
         Style::default().fg(Color::DarkGray),
     )]));
     frame.render_widget(footer, chunks[3]);

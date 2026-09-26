@@ -58,6 +58,67 @@ pub async fn get_brave_session() -> Result<Session> {
     fallback.context("sesion Brave no encontrada todavia")
 }
 
+/// TODAS las sesiones Brave (suele haber varias: tu ventana + la nuestra,
+/// o un video de Facebook sonando a la vez que Spotify).
+pub async fn brave_sessions() -> Result<Vec<Session>> {
+    let manager = SessionManager::RequestAsync()
+        .context("RequestAsync GSMTC fallo")?
+        .get()
+        .context("RequestAsync.get() fallo")?;
+    let sessions = manager.GetSessions().context("GetSessions fallo")?;
+    let mut out = Vec::new();
+    for i in 0..sessions.Size().unwrap_or(0) {
+        let session = sessions.GetAt(i).context("GetAt sesion fallo")?;
+        let app_id = session
+            .SourceAppUserModelId()
+            .map(|h| h.to_string())
+            .unwrap_or_default()
+            .to_lowercase();
+        if app_id.contains("brave") {
+            out.push(session);
+        }
+    }
+    if out.is_empty() {
+        anyhow::bail!("sin sesiones Brave");
+    }
+    Ok(out)
+}
+
+/// Elige sesion: si hay pista (titulo conocido del historial), la que
+/// coincida; si no, la primera SONANDO; si ninguna, la primera.
+/// Evita engancharse a un video de Facebook cuando Spotify tambien suena.
+pub async fn pick_session(hint_title: Option<&str>) -> Result<Session> {
+    let all = brave_sessions().await?;
+    if all.len() == 1 {
+        return Ok(all.into_iter().next().expect("uno"));
+    }
+    // 1) Hint del historial rata-spot: la de Spotify casi seguro.
+    if let Some(hint) = hint_title.filter(|h| !h.is_empty() && *h != "—") {
+        let want = hint.to_lowercase();
+        for s in &all {
+            let title = get_track(s)
+                .await
+                .map(|t| t.title.to_lowercase())
+                .unwrap_or_default();
+            if !title.is_empty() && (title.contains(&want) || want.contains(&title)) {
+                return Ok(s.clone());
+            }
+        }
+    }
+    // 2) Primera sonando. 3) Primera a secas.
+    for s in &all {
+        let playing = s
+            .GetPlaybackInfo()
+            .and_then(|info| info.PlaybackStatus())
+            .map(|st| st == PlaybackStatus::Playing)
+            .unwrap_or(false);
+        if playing {
+            return Ok(s.clone());
+        }
+    }
+    Ok(all.into_iter().next().expect("no vacio"))
+}
+
 /// Lee titulo/artista/album + playing/paused + progreso.
 /// Nunca deberia crashear al llamador: los campos faltantes van a default.
 pub async fn get_track(session: &Session) -> Result<TrackInfo> {

@@ -11,7 +11,12 @@ use anyhow::Result;
 use crate::{gsmtc, launcher};
 
 pub async fn boot() -> Result<(bool, String)> {
-    let reuse_existing = gsmtc::get_brave_session().await.is_ok();
+    // Hint del historial: con varias sesiones (video + Spotify), enganchar
+    // la que coincida con tu ultima rola en vez de la primera que suene.
+    let hint = gsmtc::load_last_track()
+        .map(|t| t.title)
+        .unwrap_or_default();
+    let reuse_existing = gsmtc::pick_session(Some(&hint)).await.is_ok();
     if reuse_existing {
         Ok((
             true,

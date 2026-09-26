@@ -7,11 +7,12 @@ use ratatui::widgets::ListState;
 use crate::cdp::{LibraryItem, TrackItem};
 use crate::gsmtc::{ProgressSmoother, TrackInfo};
 
-/// Pantalla del panel central: biblioteca o canciones de una playlist.
+/// Pantalla del panel central: biblioteca, canciones o busqueda.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Library,
     Tracks,
+    Search,
 }
 
 /// Estado que dibuja la TUI. El smoother ya guarda
@@ -38,6 +39,13 @@ pub struct AppState {
     /// Nombre de la playlist abierta / "cargando..." / error.
     pub tr_msg: String,
     pub tr_playlist: String,
+    /// Buscador: query en edicion, resultados y su cursor.
+    pub search_query: String,
+    pub search_active: bool,
+    pub results: Vec<LibraryItem>,
+    pub sr_index: usize,
+    pub sr_state: ListState,
+    pub sr_msg: String,
     /// Throttle de flechas: ultimo movimiento aceptado.
     last_nav: Instant,
 }
@@ -58,6 +66,8 @@ impl AppState {
         pl_state.select(Some(0));
         let mut tr_state = ListState::default();
         tr_state.select(Some(0));
+        let mut sr_state = ListState::default();
+        sr_state.select(Some(0));
         Self {
             smoother: ProgressSmoother::new(),
             connected: false,
@@ -72,6 +82,12 @@ impl AppState {
             tr_state,
             tr_msg: String::new(),
             tr_playlist: String::new(),
+            search_query: String::new(),
+            search_active: false,
+            results: Vec::new(),
+            sr_index: 0,
+            sr_state,
+            sr_msg: String::new(),
             last_nav: Instant::now() - NAV_DELAY,
         }
     }
@@ -120,8 +136,23 @@ impl AppState {
         self.tracks.get(self.tr_index)
     }
 
-    /// Volver a la vista biblioteca (← / Esc).
+    /// Mover seleccion de resultados (j/k en vista Search), con wrap.
+    pub fn sr_move(&mut self, delta: i32) {
+        if self.results.is_empty() {
+            return;
+        }
+        let n = self.results.len() as i32;
+        self.sr_index = (self.sr_index as i32 + delta).rem_euclid(n) as usize;
+        self.sr_state.select(Some(self.sr_index));
+    }
+
+    pub fn sr_selected(&self) -> Option<&LibraryItem> {
+        self.results.get(self.sr_index)
+    }
+
+    /// Volver a la vista biblioteca (← / Esc). Apaga la escritura.
     pub fn back_to_library(&mut self) {
         self.view = View::Library;
+        self.search_active = false;
     }
 }

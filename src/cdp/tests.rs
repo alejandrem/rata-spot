@@ -51,6 +51,51 @@ async fn space_inicia_musica() {
     crate::launcher::cleanup(!launched);
 }
 
+    /// Prueba viva del buscador: navega a /search y lee resultados
+    /// (tracks + artistas + playlists). Solo lee, no reproduce.
+    #[tokio::test]
+    async fn busqueda_funciona() {
+        if let Err(e) = super::ensure_spotify_tab().await {
+            println!("sin pestana ({e}); salto");
+            return;
+        }
+        let items = super::search("fuerza regida").await.expect("buscar");
+        assert!(!items.is_empty(), "sin resultados");
+        let n_tr = items.iter().filter(|i| i.kind == "track").count();
+        println!("resultados={} tracks={}", items.len(), n_tr);
+        for i in items.iter().take(10) {
+            println!("{}: {} | {} | {}", i.kind, i.name, i.detail, i.uri);
+        }
+        assert!(n_tr > 0, "sin tracks en resultados");
+        // Tocar el primer track por URI (lo que hace Enter en resultados).
+        let first = items.iter().find(|i| i.kind == "track").expect("sin track");
+        println!("TOCANDO: {} - {} [{}]", first.name, first.detail, first.uri);
+        let out = super::play_uri(&first.uri, &first.name).await.expect("tocar track");
+        println!("CLICK: {out}");
+        let mut found = None;
+        for _ in 0..20 {
+            // Estricto: buscar en TODAS las sesiones la que toca Pika Pika.
+            // (Un video de Facebook podria ser la primera sesion sonando.)
+            if let Ok(all) = crate::gsmtc::brave_sessions().await {
+                for s in &all {
+                    if let Ok(t) = crate::gsmtc::get_track(s).await {
+                        if t.playing && t.title.to_lowercase().contains("pika") {
+                            found = Some((s.clone(), t));
+                            break;
+                        }
+                    }
+                }
+            }
+            if found.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        let (s, t) = found.expect("click OK pero Pika Pika no suena (¿otra sesion?)");
+        println!("SUENA: {} — {} [{}]", t.title, t.artist, t.format_time());
+        let _ = crate::gsmtc::pause(&s).await;
+    }
+
     /// Diagnostico del DOM (solo imprime, siempre pasa).
     #[tokio::test]
     async fn diag_estado() {
@@ -58,6 +103,41 @@ async fn space_inicia_musica() {
             Ok(s) => println!("DIAG: {s}"),
             Err(e) => println!("DIAG-ERR: {e}"),
         }
+    }
+
+    /// Inventario de botones Play/Reproducir visibles en la pestana actual.
+    #[tokio::test]
+    async fn diag_play_buttons() {
+        use super::client::cdp_call;
+        use super::tabs::spotify_ws_url;
+        let ws = spotify_ws_url().await.expect("sin tab");
+        let js = r#"(() => {
+          const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
+          const out = [];
+          document.querySelectorAll('button').forEach((b, i) => {
+            const al = b.getAttribute('aria-label') || '';
+            const td = b.getAttribute('data-testid') || '';
+            if (/reproducir|play/i.test(al) || td.includes('play')) {
+              out.push({i, al: al.slice(0, 70), td, vis: vis(b),
+                html: b.outerHTML.slice(0, 200)});
+            }
+          });
+          return JSON.stringify({url: location.href, title: document.title.slice(0,50), buttons: out});
+        })()"#;
+        let v = cdp_call(
+            &ws,
+            50,
+            "Runtime.evaluate",
+            serde_json::json!({ "expression": js, "returnByValue": true }),
+        )
+        .await
+        .expect("evaluate");
+        println!(
+            "DIAG-BTN: {}",
+            v.pointer("/result/result/value")
+                .and_then(|x| x.as_str())
+                .unwrap_or("?")
+        );
     }
 
     /// Diagnostico GSMTC en vivo: sesion, playing, posicion x3 con 2s
