@@ -7,7 +7,7 @@
 use anyhow::{Context, Result};
 
 use super::client::cdp_call;
-use super::tabs::spotify_ws_url;
+use super::tabs::{spa_navigate, spotify_ws_url};
 
 /// Busca y regresa items mezclados (tracks primero): LibraryItem
 /// reutilizado {name, detail, uri, kind} para pintarlos igual.
@@ -16,12 +16,11 @@ pub async fn search(query: &str) -> Result<Vec<super::LibraryItem>> {
     if q.is_empty() {
         anyhow::bail!("escribe algo primero ( / + texto + Enter )");
     }
-    let ws_url = spotify_ws_url().await?;
-    super::client::cdp_call(
-        &ws_url,
-        40,
-        "Page.navigate",
-        serde_json::json!({ "url": format!("https://open.spotify.com/search/{}", encode(q)) }),
+    // SPA (no Page.navigate): no cortar la musica que suena mientras buscas.
+    let eq = encode(q);
+    spa_navigate(
+        &format!("https://open.spotify.com/search/{eq}"),
+        &format!("/search/{eq}"),
     )
     .await?;
     // Esperar resultados (hasta 8s) y leerlos.

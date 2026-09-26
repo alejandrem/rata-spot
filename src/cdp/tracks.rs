@@ -34,15 +34,9 @@ pub async fn open_page(uri: &str) -> Result<()> {
     // Self-healing: si la pestana se cerro (usuario o crash renderer),
     // recrearla en vez de morir (el fallo transitorio no avisa).
     ensure_spotify_tab().await?;
-    let ws_url = spotify_ws_url().await?;
-    super::client::cdp_call(
-        &ws_url,
-        30,
-        "Page.navigate",
-        serde_json::json!({ "url": url }),
-    )
-    .await?;
-    Ok(())
+    // SPA (no Page.navigate): no destruir el reproductor; la musica actual
+    // sigue hasta que empiece la nueva.
+    super::tabs::spa_navigate(&url, &format!("/{kind}/{id}")).await
 }
 
 /// Abre una playlist y espera su tracklist (hasta 10s).
@@ -193,28 +187,18 @@ const TRACKS_JS: &str = r#"(async () => {
   return JSON.stringify({total, tracks:[...out.values()]});
 })()"#;
 
-/// Reproduce un URI por TITULO (determinista): navega a su pagina y
-/// clickea el boton cuyo aria-label contenga el titulo con un click
-/// CONFIABLE (Input.dispatchMouseEvent = input real con user activation).
-/// El .click() por JS es "untrusted" y Spotify no arranca audio con el.
+/// Reproduce un URI (track/playlist/artist/album/show): navega a su
+/// pagina y alterna con TECLA ESPACIO real (trusted). Los clicks por
+/// mouse (incluso trusted) a veces no arrancan audio; Space es lo que
+/// haria tu dedo y esta probado en vivo con sesion GSMTC resultante.
 pub async fn play_uri(uri: &str, title: &str) -> Result<String> {
     open_page(uri).await?;
-    // Titulo como argumento IIFE: evita escapar selectores CSS.
-    let esc = title.replace('\\', "\\\\").replace('"', "\\\"");
-    let find_js = format!(
-        r#"((title) => {{
-          const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
-          const all = [...document.querySelectorAll('button[data-testid="play-button"],button[aria-label^="Reproducir"],button[aria-label^="Play"]')];
-          const mine = all.find(b => vis(b) && (b.getAttribute('aria-label') || '').includes(title));
-          if (mine) {{
-            const r = mine.getBoundingClientRect();
-            return JSON.stringify({{click: true, x: r.x + r.width / 2, y: r.y + r.height / 2}});
-          }}
-          const hid = all.find(b => (b.getAttribute('aria-label') || '').includes(title));
-          if (hid) {{ hid.scrollIntoView({{block:'center'}}); return JSON.stringify({{scrolled: true}}); }}
-          return JSON.stringify({{none: true}});
-        }})("{esc}")"#
-    );
+    // Solo tracks matchean titulo (las playlists suenan otra rola).
+    let want: Option<String> = uri
+        .split(':')
+        .nth(1)
+        .filter(|k| *k == "track")
+        .map(|_| title.to_lowercase());
     for _ in 0..30 {
         // WS fresco por intento: /json/list a veces flap ea vacio un momento.
         let ws_url = match spotify_ws_url().await {
@@ -224,49 +208,97 @@ pub async fn play_uri(uri: &str, title: &str) -> Result<String> {
                 continue;
             }
         };
-        let v = super::client::cdp_call(
-            &ws_url,
-            22,
-            "Runtime.evaluate",
-            serde_json::json!({ "expression": find_js, "returnByValue": true }),
-        )
-        .await?;
-        let raw = v
-            .pointer("/result/result/value")
-            .and_then(|x| x.as_str())
-            .unwrap_or("{}")
-            .to_string();
-        let hit: serde_json::Value =
-            serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
-        if hit.get("click").and_then(|x| x.as_bool()) == Some(true) {
-            let x = hit.get("x").and_then(|n| n.as_f64()).unwrap_or(0.0);
-            let y = hit.get("y").and_then(|n| n.as_f64()).unwrap_or(0.0);
-            trusted_click(&ws_url, x, y).await?;
-            return Ok("clicked-trusted".to_string());
+        let aria = player_aria(&ws_url).await.unwrap_or_default();
+        if aria == "Pausar" {
+            // Player dice sonando: verificar sesion real (no el wedge).
+            if let Some(t) = playing_title().await {
+                if want.as_ref().map(|w| t.contains(w)).unwrap_or(true) {
+                    return Ok("already-playing".to_string());
+                }
+            }
+            // Pausar sin sesion = wedge: recargar y seguir.
+            reload_tab().await?;
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            continue;
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Reproducir (o sin player): Espacio real.
+        space_press(&ws_url).await?;
+        // Esperar registro GSMTC hasta 3s antes del proximo intento
+        // (si no, el siguiente Space lo pausa de nuevo).
+        for _ in 0..6 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if let Some(t) = playing_title().await {
+                if want.as_ref().map(|w| t.contains(w)).unwrap_or(true) {
+                    return Ok("space-playing".to_string());
+                }
+            }
+        }
     }
     anyhow::bail!("no pude tocar '{title}' (¿saliste de su pagina?)");
 }
 
-/// Click real a coordenadas del viewport: el navegador lo ve como input
-/// de usuario (trusted), con user activation para el audio.
-async fn trusted_click(ws_url: &str, x: f64, y: f64) -> Result<()> {
-    for typ in ["mousePressed", "mouseReleased"] {
+/// aria-label del boton play/pause del player ("" si no hay player).
+async fn player_aria(ws_url: &str) -> Result<String, anyhow::Error> {
+    let v = super::client::cdp_call(
+        ws_url,
+        26,
+        "Runtime.evaluate",
+        serde_json::json!({
+            "expression": "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label') || ''",
+            "returnByValue": true,
+        }),
+    )
+    .await?;
+    Ok(v
+        .pointer("/result/result/value")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// Titulo en minusculas de lo que este sonando (cualquier sesion), o None.
+async fn playing_title() -> Option<String> {
+    let all = crate::gsmtc::brave_sessions().await.ok()?;
+    for s in &all {
+        if let Ok(t) = crate::gsmtc::get_track(s).await {
+            if t.playing {
+                return Some(t.title.to_lowercase());
+            }
+        }
+    }
+    None
+}
+
+/// Espacio real (trusted): keyDown + keyUp como un dedo de verdad.
+async fn space_press(ws_url: &str) -> Result<()> {
+    for (id, typ) in [(27, "keyDown"), (28, "keyUp")] {
         super::client::cdp_call(
             ws_url,
-            23,
-            "Input.dispatchMouseEvent",
+            id,
+            "Input.dispatchKeyEvent",
             serde_json::json!({
                 "type": typ,
-                "x": x,
-                "y": y,
-                "button": "left",
-                "clickCount": 1,
+                "key": " ",
+                "code": "Space",
+                "windowsVirtualKeyCode": 32,
+                "nativeVirtualKeyCode": 32,
             }),
         )
         .await?;
     }
+    Ok(())
+}
+
+/// Recarga la pestana Spotify (Page.reload).
+async fn reload_tab() -> Result<()> {
+    let ws_url = spotify_ws_url().await?;
+    super::client::cdp_call(
+        &ws_url,
+        25,
+        "Page.reload",
+        serde_json::json!({}),
+    )
+    .await?;
     Ok(())
 }
 pub async fn play_track(track_id: &str) -> Result<String> {

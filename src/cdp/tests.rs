@@ -7,8 +7,11 @@ use std::time::Duration;
 /// Prueba viva del primer play (lo que hace [space] sin sesion):
 /// asegura pestana Spotify, click al Play y espera sesion GSMTC (20s).
 /// Si este test pasa, el flujo completo funciona.
-#[tokio::test]
-async fn space_inicia_musica() {
+    /// Vivo y RUIDOSO (suena + navega): ignorado por default.
+    /// Correr a mano con manos fuera: cargo test -- --ignored
+    #[ignore]
+    #[tokio::test]
+    async fn space_inicia_musica() {
     // 0. Si ya suena, no hay nada que inyectar.
     if let Ok(s) = crate::gsmtc::get_brave_session().await {
         if let Ok(t) = crate::gsmtc::get_track(&s).await {
@@ -53,6 +56,8 @@ async fn space_inicia_musica() {
 
     /// Prueba viva del buscador: navega a /search y lee resultados
     /// (tracks + artistas + playlists). Solo lee, no reproduce.
+    /// Vivo y RUIDOSO: ignorado por default (ver space_inicia_musica).
+    #[ignore]
     #[tokio::test]
     async fn busqueda_funciona() {
         if let Err(e) = super::ensure_spotify_tab().await {
@@ -98,6 +103,8 @@ async fn space_inicia_musica() {
 
     /// Prueba viva del dashboard: abre la pagina del track y lee
     /// header + letra (solo lee, no reproduce).
+    /// Vivo (navega): ignorado por default.
+    #[ignore]
     #[tokio::test]
     async fn track_detail_se_lee() {
         if let Err(e) = super::ensure_spotify_tab().await {
@@ -123,6 +130,75 @@ async fn space_inicia_musica() {
         }
     }
 
+    /// Regresion: buscar NO debe cortar la musica que suena.
+    /// Flujo del bug: / + texto + Enter => Page.navigate mataba el audio.
+    /// Con navegacion SPA la misma rola sigue sonando tras buscar.
+    /// Vivo y RUIDOSO: ignorado por default.
+    #[ignore]
+    #[tokio::test]
+    async fn busqueda_no_corta_musica() {
+        use std::time::Duration as StdDur;
+        if let Err(e) = super::ensure_spotify_tab().await {
+            println!("sin pestana ({e}); salto");
+            return;
+        }
+        // 0. Entorno limpio: pausar sesiones ajenas (stories/videos) para
+        // medir SOLO Spotify. Sin esto el test mide lo que miras tu.
+        if let Ok(all) = crate::gsmtc::brave_sessions().await {
+            for s in &all {
+                if let Ok(t) = crate::gsmtc::get_track(s).await {
+                    if t.playing && !t.title.to_lowercase().contains("pika") {
+                        println!("pausando ajeno: {} — {}", t.title, t.artist);
+                        let _ = crate::gsmtc::pause(s).await;
+                    }
+                }
+            }
+        }
+        // 1. Prender Pika SIEMPRE: el test controla su musica (lo ajeno
+        // como stories termina solo y falsea todo).
+        async fn sonando_pika() -> Option<String> {
+            let all = crate::gsmtc::brave_sessions().await.ok()?;
+            for s in &all {
+                if let Ok(t) = crate::gsmtc::get_track(s).await {
+                    if t.playing && t.title.to_lowercase().contains("pika") {
+                        return Some(t.title);
+                    }
+                }
+            }
+            None
+        }
+        println!("prendiendo Pika...");
+        super::play_uri(
+            "spotify:track:5LHPcY9yd0hWVFIW4yfOCJ",
+            "Pika Pika",
+        )
+        .await
+        .expect("prender");
+        let mut antes = None;
+        for _ in 0..20 {
+            if let Some(t) = sonando_pika().await {
+                antes = Some(t);
+                break;
+            }
+            tokio::time::sleep(StdDur::from_secs(1)).await;
+        }
+        let antes = antes.expect("Pika no sono (¿audio bloqueado?)");
+        println!("SONABA: {antes}");
+        // 1. Buscar (esto mataba el audio con Page.navigate).
+        let items = super::search("blackpink").await.expect("buscar");
+        assert!(!items.is_empty(), "busqueda vacia");
+        tokio::time::sleep(StdDur::from_secs(2)).await;
+        // 3. La MISMA rola sigue sonando (Pika, no lo que sea).
+        let despues = sonando_pika().await.expect("se corto la musica al buscar!");
+        println!("SUENA: {despues}");
+        let a = antes.to_lowercase();
+        let d = despues.to_lowercase();
+        assert!(
+            a.contains(&d) || d.contains(&a),
+            "cambio la rola: '{antes}' -> '{despues}'"
+        );
+    }
+
     /// Diagnostico del DOM (solo imprime, siempre pasa).
     #[tokio::test]
     async fn diag_estado() {
@@ -130,6 +206,68 @@ async fn space_inicia_musica() {
             Ok(s) => println!("DIAG: {s}"),
             Err(e) => println!("DIAG-ERR: {e}"),
         }
+    }
+
+    /// Diagnostico de media real: elementos audio/video (paused, muted,
+    /// currentTime, errores) + visibilidad. Dice si el audio fluye o no.
+    #[tokio::test]
+    async fn diag_media() {
+        use super::client::cdp_call;
+        use super::tabs::spotify_ws_url;
+        let ws = spotify_ws_url().await.expect("sin tab");
+        let js = r#"(() => {
+          const els = [...document.querySelectorAll('audio,video')].map(m => ({
+            tag: m.tagName, paused: m.paused, muted: m.muted, vol: m.volume,
+            t: m.currentTime, dur: m.duration, err: m.error ? m.error.code : 0,
+            net: m.networkState, ready: m.readyState,
+            src: (m.currentSrc || '').slice(-50)
+          }));
+          return JSON.stringify({url: location.href, vis: document.visibilityState,
+            audible: document.querySelectorAll('audio,video').length, media: els});
+        })()"#;
+        // dos muestras con 2s para ver si currentTime avanza
+        for i in 0..2 {
+            let v = cdp_call(
+                &ws,
+                51,
+                "Runtime.evaluate",
+                serde_json::json!({ "expression": js, "returnByValue": true }),
+            )
+            .await
+            .expect("evaluate");
+            println!(
+                "DIAG-MEDIA[{i}]: {}",
+                v.pointer("/result/result/value")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("?")
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    /// Sonda: manda Espacio real (trusted) a la pagina. Lo que haria tu dedo.
+    #[tokio::test]
+    async fn diag_space() {
+        use super::client::cdp_call;
+        use super::tabs::spotify_ws_url;
+        let ws = spotify_ws_url().await.expect("sin tab");
+        for typ in ["keyDown", "keyUp"] {
+            cdp_call(
+                &ws,
+                60,
+                "Input.dispatchKeyEvent",
+                serde_json::json!({
+                    "type": typ,
+                    "key": " ",
+                    "code": "Space",
+                    "windowsVirtualKeyCode": 32,
+                    "nativeVirtualKeyCode": 32,
+                }),
+            )
+            .await
+            .expect("tecla");
+        }
+        println!("DIAG-SPACE: enviado");
     }
 
     /// Inventario de botones Play/Reproducir visibles en la pestana actual.
@@ -217,6 +355,8 @@ async fn space_inicia_musica() {
 
     /// Prueba viva del tracklist: abre la primera playlist y lee sus
     /// canciones (solo dibujar, sin reproducir). Autosuficiente.
+    /// Vivo (navega): ignorado por default.
+    #[ignore]
     #[tokio::test]
     async fn playlist_tracks_se_leen() {
         if let Err(e) = super::ensure_spotify_tab().await {
@@ -245,6 +385,8 @@ async fn space_inicia_musica() {
 
     /// Prueba viva de tocar rola: reproduce la primera cancion de la
     /// primera playlist y espera sesion GSMTC. Limpia pausando al final.
+    /// Vivo y RUIDOSO: ignorado por default.
+    #[ignore]
     #[tokio::test]
     async fn track_se_reproduce() {
         if let Err(e) = super::ensure_spotify_tab().await {

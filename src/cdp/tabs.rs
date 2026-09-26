@@ -93,3 +93,53 @@ pub async fn ensure_spotify_tab() -> Result<()> {
     }
     anyhow::bail!("pestana Spotify no aparece")
 }
+
+/// Navegacion SPA (sin recargar): pushState + popstate para que React
+/// Router cambie de vista SIN destruir el reproductor. La musica actual
+/// sigue sonando hasta que empiece la nueva (Page.navigate recargaba el
+/// documento y mataba el audio en cada Enter de busqueda/playlist).
+/// Si la ruta no cambia en ~2s, fallback a Page.navigate (reinicia el
+/// audio, pero funciona).
+pub(crate) async fn spa_navigate(url: &str, path: &str) -> Result<()> {
+    let ws_url = spotify_ws_url().await?;
+    let esc = url.replace('\\', "\\\\").replace('"', "\\\"");
+    let js = format!(
+        r#"((url) => {{
+          if (location.href === url) return 'same';
+          history.pushState({{}}, '', url);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+          return 'pushed';
+        }})("{esc}")"#
+    );
+    cdp_call(
+        &ws_url,
+        35,
+        "Runtime.evaluate",
+        serde_json::json!({ "expression": js, "returnByValue": true }),
+    )
+    .await?;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let v = cdp_call(
+        &ws_url,
+        36,
+        "Runtime.evaluate",
+        serde_json::json!({ "expression": "location.href", "returnByValue": true }),
+    )
+    .await?;
+    let cur = v
+        .pointer("/result/result/value")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    if cur.contains(path) {
+        return Ok(());
+    }
+    // Fallback: navegacion completa (reinicia audio, pero funciona).
+    cdp_call(
+        &ws_url,
+        37,
+        "Page.navigate",
+        serde_json::json!({ "url": url }),
+    )
+    .await?;
+    Ok(())
+}
