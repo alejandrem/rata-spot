@@ -1,10 +1,23 @@
 //! Library_js: lectura del sidebar + diagnostico del DOM.
 
 /// Scrollea el sidebar leyendo filas por [id^=listrow-title-spotify:].
+/// Grid locale-agnostic: el perfil nuevo sin `intl-es` sirve la UI en
+/// inglés ("Your Library") y el exacto ES fallaba con `no-grid` (bug #30).
+/// Orden: exacto ES -> label ES/EN -> grid que ya trae filas de biblioteca.
 pub(crate) const LIBRARY_JS: &str = r#"(async () => {
-  const grid = document.querySelector('[role="grid"][aria-label="Tu biblioteca"]');
+  const pickGrid = () => {
+    const exact = document.querySelector('[role="grid"][aria-label="Tu biblioteca"]');
+    if (exact) return exact;
+    const grids = [...document.querySelectorAll('[role="grid"]')];
+    const byLabel = grids.find(g => /biblioteca|library/i.test(g.getAttribute('aria-label') || ''));
+    if (byLabel) return byLabel;
+    return grids.find(g => g.querySelector('[id^="listrow-title-spotify:"]')) || null;
+  };
+  const grid = pickGrid();
   const box = document.querySelector('#Desktop_LeftSidebar_Id [data-overlayscrollbars-viewport]');
-  if (!grid || !box) return JSON.stringify({error:'no-grid'});
+  // Error con contexto (viewport + sidebar): si un tamaño futuro colapsa la
+  // sidebar, el mensaje lo dice en vez de un `no-grid` pelado (800x600 ok).
+  if (!grid || !box) return JSON.stringify({error: 'no-grid ' + window.innerWidth + 'x' + window.innerHeight + ' side' + (!!document.querySelector('#Desktop_LeftSidebar_Id') ? 1 : 0)});
   const total = parseInt(grid.getAttribute('aria-rowcount') || '0', 10);
   const out = new Map();
   let waited = 0;
@@ -46,8 +59,13 @@ pub(crate) const LIBRARY_JS: &str = r#"(async () => {
 })()"#;
 
 /// Diagnostico del DOM: grid, rowcount, ids, sidebar, url (test diag_estado).
+/// Mismo fallback de idioma que LIBRARY_JS (si no, el diag mentiría en EN).
 pub(crate) const LIBRARY_DIAG_JS: &str = r#"(() => {
-  const grid = document.querySelector('[role="grid"][aria-label="Tu biblioteca"]');
+  const grids = [...document.querySelectorAll('[role="grid"]')];
+  const grid = document.querySelector('[role="grid"][aria-label="Tu biblioteca"]')
+    || grids.find(g => /biblioteca|library/i.test(g.getAttribute('aria-label') || ''))
+    || grids.find(g => g.querySelector('[id^="listrow-title-spotify:"]'))
+    || null;
   const box = document.querySelector('#Desktop_LeftSidebar_Id [data-overlayscrollbars-viewport]');
   return JSON.stringify({
     url: location.href, title: document.title.slice(0, 60), ready: document.readyState,

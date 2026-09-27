@@ -40,6 +40,8 @@ mod tests;
 #[allow(unused_imports)]
 pub use api::{api_diag, search_via_api};
 pub use library::{LibraryItem, library_items};
+/// Solo tests/diagnostico (en binario no-test quedan sin uso).
+#[allow(unused_imports)]
 pub use transport::debug_alive;
 /// Solo tests/diagnostico (en binario no-test quedan sin uso).
 #[allow(unused_imports)]

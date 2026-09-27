@@ -14,7 +14,7 @@ src/
   main.rs                        # Punto de entrada delgado: boot → terminal → run_app → cleanup.
   app/                           # Orquestación del loop TUI.
     mod.rs                       # Índice: terminal/boot/keys/sync/library/run.
-    boot.rs                      # Arranque en 3 estados + sala de espera (P2) si Brave está sordo.
+    boot.rs                      # Arranque con perfil dedicado: reengancha, login único o lanza.
     run.rs                       # El loop: dibuja + teclado + sync GSMTC por tick + cleanup al salir.
     terminal.rs                  # Setup/restore del terminal (raw + pantalla alternativa).
     library.rs                   # Carga la biblioteca del DOM en fondo (sin bloquear el arranque).
@@ -86,15 +86,18 @@ src/
       update.rs                  # update: free-run si GSMTC clavado <500ms, resincroniza si salto real.
       display.rs                 # last_known + smoothed_position/progress + display_track + restore.
       tests.rs                   # Tests: free-run con 39ms clavados, pausa congela, salto resincroniza.
-  launcher/                      # Brave minimizado con flags de dieta + cierre quirúrgico.
+  launcher/                      # Brave propio (perfil dedicado) + dieta + cierre quirúrgico.
     mod.rs                       # Índice: config/ports/process/window.
     config/                      # URL, flags y localización del navegador (sin C:\ quemado).
       mod.rs                     # SPOTIFY_URL + BRAVE_FLAGS_BASE + KNOWN_EXES + exe_bases().
       find.rs                    # find_browser_exe: env → where → registro → conocidas → portable (Brave primero).
       lookup.rs                  # where_lookup (PATH) + reg_app_path (HKLM/HKCU App Paths, sin crates).
       candidates.rs              # candidates_from_env: %ProgramFiles%/%LOCALAPPDATA% + scoop + portable ./.
-      running.rs                 # is_brave_running SOLO brave.exe (boot) + is_browser_running (diag). Ver bug #28.
-      dirs.rs                    # data_dir (LOCALAPPDATA→USERPROFILE→temp) + perfil aislado (reservado).
+      running.rs                 # is_brave_running (diag) + is_browser_running (diag). El boot ya no los usa.
+      profile.rs                 # Perfil dedicado persistente: dir + is_fresh + lock + puerto guardado. Ver bug #29.
+    ports.rs                     # Puerto CDP efímero + origins a 127.0.0.1 (P0/P1) + RATA_SPOT_PORT.
+    process.rs                   # launch (--user-data-dir + debug_flags + verificación HWND/PID) + cleanup.
+    window.rs                    # Snapshot EnumWindows + window_pid/window_title + WM_CLOSE solo a lo nuestro.
     ports.rs                     # Puerto CDP efímero + origins a 127.0.0.1 (P0/P1) + RATA_SPOT_PORT.
     process.rs                   # launch_brave_spotify (--new-window + debug_flags + HWND) + cleanup al salir.
     window.rs                    # Snapshot EnumWindows (Chrome_WidgetWin_1) + WM_CLOSE solo a lo nuestro.
@@ -115,15 +118,17 @@ src/
 
 docs/
   plan de implementacion.md      # Plan original Fase 1-5 (setup, Brave, GSMTC, TUI, RAM).
-  bugs-resueltos-uwu.md          # Bitácora #1-28 (el #28 es la sala fantasma por Edge, anti-regresión).
+  bugs-resueltos-uwu.md          # Bitácora #1-29 (el #29 es el perfil dedicado: casita propia).
   mantenimiento.md               # Las 3 capas CDP + flujos + runbook cuando Spotify mueva el DOM.
   arquitectura.md                # Este archivo: mapa 1-carpeta-1-dominio, 1-archivo-1-tarea.
 ```
 
 Notas que evitan los próximos bugs:
 
-- `boot.rs` SOLO se bloquea por `brave.exe` (`is_brave_running`); Chrome/Edge
-  van por `is_browser_running` y jamás entran al boot (bug #28).
+- Tu Brave personal es irrelevante: el perfil dedicado es otro proceso, nunca
+  delega a él ni pide cerrarlo (la sala de espera P2 se eliminó, bugs #25/#29).
+- `boot.rs` reengancha la instancia propia por puerto guardado; en perfil
+  fresco pide login único (Enter) y sigue.
 - El DOM vive en `cdp/selectors/`; si Spotify rediseña, se toca UNA const en
   `names.rs` y `cargo test` grita si el JS quedó divorciado (`selectors/tests.rs`).
 - `cdp/api/` es experimental con kill-switch `RATA_SPOT_API=0`; si el token o

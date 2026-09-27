@@ -105,8 +105,9 @@ pub(crate) async fn fetch_json_list() -> Result<String> {
     fetch_cdp_text("/json/list").await
 }
 
-/// ¿Hay puerto CDP vivo? (para el boot P2: distinguir "Brave sordo" de
-/// "Brave cerrado"). Barato: un GET a /json/list.
+/// ¿Hay puerto CDP vivo? (diagnóstico/tests; el boot con perfil dedicado
+/// reengancha por puerto guardado). Barato: un GET a /json/list.
+#[allow(dead_code)]
 pub async fn debug_alive() -> bool {
     fetch_json_list().await.is_ok()
 }

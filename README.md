@@ -37,7 +37,8 @@ que suena por **GSMTC** (la API nativa de Windows) y maneja la página por
 
 > **Requisitos:** Windows 10/11 · [Brave](https://brave.com) instalado ·
 > [Rust](https://rustup.rs) toolchain `stable-x86_64-pc-windows-msvc` ·
-> cuenta de Spotify (logueada una vez en Brave).
+> cuenta de Spotify (login único en el perfil rata-spot la primera vez;
+> tu Brave personal ni se toca).
 
 ```powershell
 cargo run
@@ -94,7 +95,7 @@ el estado real del DOM y GSMTC.
 | Variable | Efecto |
 |---|---|
 | `RATA_SPOT_HIDDEN=1` | Brave oculto fuera de pantalla (debug: visible) |
-| `RATA_SPOT_NOGPU=1` | Prueba `--disable-gpu` (~20MB menos, puede romper Widevine) |
+| `RATA_SPOT_NOGPU=0` | Quita `--disable-gpu` (va por defecto; solo si Widevine corta el audio) |
 | `RATA_SPOT_API=0` | Buscador solo por DOM (apaga el intento JSON/red) |
 | `RATA_SPOT_PORT=9333` | Fija el puerto CDP (default: efímero + fallback 9222) |
 

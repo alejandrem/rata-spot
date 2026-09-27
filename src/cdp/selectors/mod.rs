@@ -24,7 +24,7 @@ pub use names::*;
 #[allow(unused_imports)]
 pub(crate) use dashboard_js::DASHBOARD_JS;
 #[allow(unused_imports)]
-pub(crate) use health::summarize_health;
+pub(crate) use health::{summarize_health, HEALTH_JS};
 #[allow(unused_imports)]
 pub(crate) use library_js::{LIBRARY_DIAG_JS, LIBRARY_JS};
 #[allow(unused_imports)]

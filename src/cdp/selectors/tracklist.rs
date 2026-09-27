@@ -14,11 +14,12 @@ pub(crate) const TRACKLIST_SCROLL_JS: &str = r#"(() => { const g = document.quer
 
 /// Lee filas por `a[data-testid="internal-track-link"]` (sin clases hash).
 pub(crate) const TRACKS_JS: &str = r#"(async () => {
+  const dims = () => window.innerWidth + 'x' + window.innerHeight;
   const grid = document.querySelector('[data-testid="playlist-tracklist"],[data-testid="track-list"]');
-  if (!grid) return JSON.stringify({error:'no-tracklist'});
+  if (!grid) return JSON.stringify({error:'no-tracklist ' + dims()});
   const box = grid.closest('[data-overlayscrollbars-viewport]')
     || document.querySelector('.main-view-container [data-overlayscrollbars-viewport]');
-  if (!box) return JSON.stringify({error:'no-scroller'});
+  if (!box) return JSON.stringify({error:'no-scroller ' + dims()});
   const total = parseInt(grid.getAttribute('aria-rowcount') || '0', 10);
   const out = new Map();
   const read = () => {

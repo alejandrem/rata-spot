@@ -10,8 +10,8 @@ use std::sync::{Mutex, OnceLock};
 use windows::Win32::{
     Foundation::{BOOL, HWND, LPARAM, WPARAM},
     UI::WindowsAndMessaging::{
-        EnumWindows, GetClassNameW, GetWindowTextLengthW, GetWindowTextW, IsWindow,
-        IsWindowVisible, PostMessageW, WM_CLOSE,
+        EnumWindows, GetClassNameW, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId, IsWindow, IsWindowVisible, PostMessageW, WM_CLOSE,
     },
 };
 
@@ -49,7 +49,9 @@ pub(crate) fn snapshot_brave_windows() -> Vec<isize> {
     out
 }
 
-fn window_title(raw: isize) -> String {
+/// Título actual de la ventana ("": cerrada o sin título).
+/// Se usa para NO cerrar ventanas ajenas y para verificar la nuestra.
+pub(crate) fn window_title(raw: isize) -> String {
     unsafe {
         let hwnd = HWND(raw as *mut core::ffi::c_void);
         if !IsWindow(hwnd).as_bool() {
@@ -65,6 +67,24 @@ fn window_title(raw: isize) -> String {
             return String::new();
         }
         String::from_utf16_lossy(&buf[..n as usize])
+    }
+}
+
+/// PID dueño de la ventana (None si ya murió).
+/// La clase `Chrome_WidgetWin_1` es de TODO Chromium (Brave/Chrome/Edge),
+/// así que el snapshot solo no basta: el PID distingue nuestra instancia.
+pub(crate) fn window_pid(raw: isize) -> Option<u32> {
+    unsafe {
+        let hwnd = HWND(raw as *mut core::ffi::c_void);
+        if !IsWindow(hwnd).as_bool() {
+            return None;
+        }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == 0 {
+            return None;
+        }
+        Some(pid)
     }
 }
 

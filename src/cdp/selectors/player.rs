@@ -25,6 +25,7 @@ pub(crate) const PLAY_CLICK_JS: &str = r#"(() => {
 })()"#;
 
 /// Click a la fila exacta de un track (por id, nada de loteria).
+/// Botón ES + EN: en UI inglesa el aria es "Play ..." (bug #30).
 pub(crate) fn track_row_click_js(track_id: &str) -> String {
     format!(
         r#"(() => {{
@@ -33,7 +34,7 @@ pub(crate) fn track_row_click_js(track_id: &str) -> String {
           const row = a.closest('[role="row"]');
           if (!row) return 'no-row';
           row.scrollIntoView({{block:'center'}});
-          const b = row.querySelector('button[aria-label^="Reproducir"]');
+          const b = row.querySelector('button[aria-label^="Reproducir"],button[aria-label^="Play"]');
           if (!b) return 'no-button';
           b.click();
           return 'clicked';

@@ -1,11 +1,11 @@
 //! Lanzador de Brave ultra-optimizado (Fase 2).
 //!
 //! - Encuentra brave.exe en rutas comunes
-//! - Lo lanza con flags de bajo consumo + ventana nueva del mismo perfil
-//! - Rastrea la ventana por HWND para cerrarla al salir (ver window.rs)
+//! - Lo lanza con flags de bajo consumo en su perfil dedicado (con tus logins)
+//! - Rastrea la ventana por HWND+PID para cerrarla al salir (ver window.rs)
 //!
 //! Tareas (1 carpeta = 1 dominio):
-//! - config/: find/lookup/candidates/running (URL, flags, navegador)
+//! - config/: find/lookup/candidates/running/profile (URL, flags, navegador)
 //! - ports: puerto CDP efimero + origins acotados (P0/P1)
 //! - process: spawn del hijo + lanzamiento + cleanup al salir
 //! - window: rastreo HWND (EnumWindows) + cierre quirurgico con WM_CLOSE

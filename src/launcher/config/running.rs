@@ -3,8 +3,9 @@
 
 use std::process::Command;
 
-/// Solo brave.exe: el boot solo se bloquea si BRAVE esta sordo.
-/// Chrome/Edge abiertos NO deben activar la sala de espera.
+/// Solo brave.exe (diagnóstico; el boot con perfil dedicado no lo usa).
+/// Chrome/Edge abiertos NO bloquean nada.
+#[allow(dead_code)]
 pub fn is_brave_running() -> bool {
     let output = Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq brave.exe", "/NH"])

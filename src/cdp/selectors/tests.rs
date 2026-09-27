@@ -7,8 +7,18 @@ fn js_menciona_sus_consts() {
     assert!(PLAY_CLICK_JS.contains(PLAY_TESTIDS[0]));
     assert!(PLAY_CLICK_JS.contains(PLAY_TESTIDS[1]));
     assert!(PLAY_CLICK_JS.contains("Reproducir"));
+    assert!(PLAY_CLICK_JS.contains("\"Play\""), "PLAY_CLICK sin fallback EN (bug #30)");
     assert!(LIBRARY_JS.contains(LIBRARY_ROW_PREFIX));
     assert!(LIBRARY_JS.contains(SIDEBAR_ID));
+    // Regla #30: ningún lector/click usa aria-label en un solo idioma.
+    assert!(
+        LIBRARY_JS.contains("biblioteca|library"),
+        "LIBRARY_JS sin fallback ES/EN (bug #30)"
+    );
+    assert!(
+        LIBRARY_DIAG_JS.contains("biblioteca|library"),
+        "LIBRARY_DIAG_JS sin fallback ES/EN (bug #30)"
+    );
     assert!(LIBRARY_DIAG_JS.contains(LIBRARY_ROW_PREFIX));
     assert!(SEARCH_JS.contains("/track/"));
     assert!(SEARCH_JS.contains(SIDEBAR_ID));
@@ -25,6 +35,19 @@ fn js_menciona_sus_consts() {
     assert!(DASHBOARD_JS.contains(TRACK_PAGE_TESTID));
     assert!(track_row_click_js("abc123").contains(TRACK_LINK_TESTID));
     assert!(track_row_click_js("abc123").contains("abc123"));
+    assert!(
+        track_row_click_js("abc123").contains("Reproducir"),
+        "row_click sin ES (bug #30)"
+    );
+    assert!(
+        track_row_click_js("abc123").contains("Play"),
+        "row_click sin EN (bug #30)"
+    );
+    // Blindaje 800x600: los errores de grid llevan viewport para diagnosticar
+    // colapso responsive sin adivinar (si Spotify cambia breakpoints).
+    assert!(LIBRARY_JS.contains("innerWidth"), "LIBRARY_JS sin viewport en no-grid");
+    assert!(TRACKS_JS.contains("innerWidth"), "TRACKS_JS sin viewport en errores");
+    assert!(HEALTH_JS.contains("innerWidth"), "HEALTH_JS sin viewport");
 }
 
 #[test]
@@ -38,4 +61,7 @@ fn resumen_health() {
     );
     assert!(summarize_health("no-json").contains("ilegible"));
     assert!(summarize_health("{}").contains("sin checks"));
+    // El health reporta viewport cuando viene (blindaje tamaño 800x600).
+    let sized = r#"{"checks":[{"name":"sidebar","ok":true}],"vw":800,"vh":600}"#;
+    assert_eq!(summarize_health(sized), "DOM 1/1 ok [800x600]");
 }

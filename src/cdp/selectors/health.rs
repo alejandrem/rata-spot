@@ -1,7 +1,7 @@
 //! Health: seis sondas no destructivas + resumen en una linea.
 
 /// Sondas sobre la pagina ACTUAL (home, search, playlist...).
-const HEALTH_JS: &str = r##"(() => {
+pub(crate) const HEALTH_JS: &str = r##"(() => {
   const q = (s) => document.querySelector(s);
   const qa = (s) => [...document.querySelectorAll(s)];
   const grids = qa('[role="grid"]');
@@ -19,7 +19,7 @@ const HEALTH_JS: &str = r##"(() => {
     {name:'track_urls', ok: trackAnchors > 0, detail: trackAnchors + ' anchors /track/'},
     {name:'main', ok: !!q('main'), detail: q('main') ? 'presente' : 'sin <main>'}
   ];
-  return JSON.stringify({url: location.href, checks});
+  return JSON.stringify({url: location.href, checks, vw: window.innerWidth, vh: window.innerHeight});
 })()"##;
 
 /// Health-check best-effort: NUNCA revienta, regresa string para el status.
@@ -76,8 +76,23 @@ pub(crate) fn summarize_health(payload: &str) -> String {
         })
         .collect();
     if bad.is_empty() {
-        format!("DOM {ok}/{} ok", checks.len())
+        format!("DOM {ok}/{} ok{}", checks.len(), viewport_suffix(&v))
     } else {
-        format!("DOM {ok}/{} ok, fallan: {}", checks.len(), bad.join(","))
+        format!(
+            "DOM {ok}/{} ok, fallan: {}{}",
+            checks.len(),
+            bad.join(","),
+            viewport_suffix(&v)
+        )
+    }
+}
+
+/// Sufijo ` [800x600]` si el payload trae viewport (guard contra colapso
+/// responsive: si Spotify colapsa la sidebar a cierto tamaño, el status
+/// lo muestra sin adivinar). Ausente en payloads viejos/tests: sin sufijo.
+fn viewport_suffix(v: &serde_json::Value) -> String {
+    match (v.get("vw").and_then(|x| x.as_u64()), v.get("vh").and_then(|x| x.as_u64())) {
+        (Some(w), Some(h)) => format!(" [{w}x{h}]"),
+        _ => String::new(),
     }
 }

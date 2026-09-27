@@ -1,19 +1,19 @@
-//! Arranque en 3 estados (P2):
+//! Arranque con perfil dedicado (casita propia, ver launcher/config/profile):
 //!
-//! 1. Hay CDP -> como siempre: reutilizar sesion GSMTC o lanzar.
-//! 2. Sin CDP y sin brave.exe -> arranque en frio.
-//! 3. Sin CDP pero CON brave.exe (abierto a mano, sordo) -> sala de
-//!    espera: NO se spawnea un hijo inutil que solo delegaria; se pide
-//!    cerrar Brave y al detectar el cierre se auto-lanza en frio y el
-//!    boot continua solo (sin reiniciar la app).
+//! 1. Hay música sonando (sesión GSMTC) -> reutilizar, no lanzar nada.
+//! 2. Perfil fresco (sin login) -> lanzar visible + login único (Enter) y seguir.
+//! 3. Si no -> lanzar (en frío es proceso propio; si hay instancia NUESTRA
+//!    viva, delega a ella, que también está bien: tiene nuestro CDP).
+//!
+//! Tu Brave personal es irrelevante aquí: otro perfil = otro proceso,
+//! nunca delega a él ni te pide cerrarlo (eso era la sala de espera P2,
+//! eliminada con el perfil dedicado).
 //!
 //! Regresa (was_already_running, boot_status): el status se pinta en la
 //! TUI porque los println! quedan ocultos bajo la pantalla alternativa.
-//! (Los println! de la sala de espera SI se ven: salen antes de la TUI.)
+//! (Los println! del login SI se ven: salen antes de la TUI.)
 
-use std::time::Duration;
-
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{cdp, gsmtc, launcher};
 
@@ -24,71 +24,57 @@ pub async fn boot() -> Result<(bool, String)> {
         .map(|t| t.title)
         .unwrap_or_default();
 
-    // Estado 3: Brave abierto pero sordo (sin puerto CDP). Esperar el
-    // cierre y seguir; al volver ya no hay Brave (o hay CDP).
-    let mut waited = false;
-    if !cdp::debug_alive().await && launcher::config::is_brave_running() {
-        wait_for_brave_close().await;
-        waited = true;
+    // Reenganchar instancia propia viva: su puerto quedó guardado.
+    if let Some(saved) = launcher::config::profile::read_saved_port() {
+        launcher::ports::set_cdp_port(saved);
     }
 
-    // Estados 1 y 2 (y salida del 3): hay CDP o ya no hay Brave.
+    // Login único: perfil fresco → abrir visible, loguearse, Enter, seguir.
+    // (El lanzamiento ya fuerza visible en fresco; aquí solo la espera.)
+    if launcher::config::profile::is_fresh() {
+        println!("rata-spot: perfil nuevo, login único necesario.");
+        println!("  1) Se abrirá Brave (perfil rata-spot): logueate en Spotify.");
+        println!("  2) Vuelve aquí y pulsa Enter para seguir.");
+        launcher::launch_brave_spotify().await?;
+        wait_enter().await;
+        println!("rata-spot: login recibido (o Enter pelado), seguimos...");
+    }
+
     // Si ya suena algo, reutilizarlo y no lanzar nada.
     if gsmtc::pick_session(Some(&hint)).await.is_ok() {
         let dom = dom_note().await;
-        let extra = if waited { " (tras sala de espera)" } else { "" };
+        let ours = launcher::config::profile::is_locked();
+        let extra = if ours { " (instancia propia)" } else { "" };
         return Ok((
             true,
-            format!("Reutilizando sesion Brave existente (ya sonaba Spotify).{extra} | {dom}"),
+            format!("Reutilizando sesion existente (ya sonaba Spotify).{extra} | {dom}"),
         ));
     }
 
-    // Sin música: lanzar (en frío tras la espera → flags sí aplican;
-    // con CDP vivo → delega a la instancia depurada, pestaña visible).
-    let owned = launcher::launch_brave_spotify().await?;
+    // Sin música: lanzar y EXIGIR pestaña Spotify (ruidoso, no silencioso).
+    launcher::launch_brave_spotify().await?;
+    crate::cdp::ensure_spotify_tab()
+        .await
+        .context("la ventana no levantó pestaña Spotify (¿sin internet? ¿Widevine?)")?;
     let pid = launcher::child_pid()
         .map(|p| p.to_string())
         .unwrap_or_else(|| "?".to_string());
     let dom = dom_note().await;
-    let extra = if waited { " | sala de espera superada" } else { "" };
     Ok((
-        owned,
+        false,
         format!(
-            "Brave ventana NUEVA visible PID {} | {} | dale play una vez | {dom}{extra}",
+            "Brave propio (perfil rata-spot) PID {} | {} | dale play una vez | {dom}",
             pid,
             launcher::SPOTIFY_URL
         ),
     ))
 }
 
-/// Sala de espera del estado 3: pide cerrar Brave y regresa cuando ya no
-/// está (para auto-lanzar en frío) o cuando aparece CDP solo (otro lo
-/// depuró: se sigue sin lanzar). Sin timeout: la filosofía del proyecto
-/// es reintentar indefinidamente; Ctrl+C cancela (no hay nada que limpiar:
-/// no lanzamos nada aún y la música ajena sigue sonando).
-async fn wait_for_brave_close() {
-    println!("rata-spot: Brave esta abierto SIN depuracion (sin puerto CDP).");
-    println!("  1) Cierra Brave por completo (todas las ventanas).");
-    println!("  2) Yo lo reabro solo con depuracion y seguimos. (Ctrl+C para cancelar)");
-    let mut ticks = 0u32;
-    loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        ticks += 1;
-        if cdp::debug_alive().await {
-            println!("rata-spot: aparecio CDP, seguimos sin lanzar.");
-            return;
-        }
-        if !launcher::config::is_brave_running() {
-            // Darle un respiro al SO: lanzar contra un Brave moribundo
-            // delegaría al cadáver en vez de arrancar en frío.
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            println!("rata-spot: Brave cerrado, relanzando en frio...");
-            return;
-        }
-        if ticks % 15 == 0 {
-            println!("rata-spot: sigo esperando... (cierra Brave para seguir, Ctrl+C para salir)");
-        }
-    }
+/// Espera un Enter en stdin (solo se usa pre-TUI, con terminal normal).
+async fn wait_enter() {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut line = String::new();
+    let _ = BufReader::new(tokio::io::stdin()).read_line(&mut line).await;
 }
 
 /// Health-check DOM best-effort (4s): si Spotify ya estaba abierto la

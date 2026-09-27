@@ -595,6 +595,77 @@ aunque su casa estaba vacía. Ahora solo mira su puerta owo.
 
 ---
 
+## 29. Ventana "independiente" que no era independiente (perfil dedicado)
+
+**Síntoma:** con tu Brave personal abierto, `cargo run` abría ventana
+"nueva" pero atada a tu proceso: sin flags de dieta, sin CDP propio,
+PID muerto en el status y cierre por HWND a ciegas (la clase
+`Chrome_WidgetWin_1` es de todo Chromium: Brave/Chrome/Edge).
+
+**Causa técnica:** sin `--user-data-dir`, Chromium bloquea el perfil y
+el segundo lanzamiento delega por IPC al vivo, ignorando
+`--remote-debugging-port` y dieta. `process.rs` asumía proceso propio;
+`window.rs` filtraba solo por clase+título, sin PID; el boot dependía
+de la sala P2 (cerrar tu Brave). El P3 aislado se había revertido
+(bug #26) por pedir relogin... pero era temporal, no persistente.
+
+**Fix:** perfil dedicado persistente `rata-spot-brave-profile`
+(`launcher/config/profile.rs`: dir + `is_fresh` + lock + puerto CDP
+guardado). `--user-data-dir` primero en el spawn: cada run es proceso
+propio aunque tu Brave siga abierto. Login ÚNICO en perfil fresco
+(visible forzado + Enter) y listo. `window.rs` suma `window_pid()`
+(`GetWindowThreadProcessId`) y el launch verifica ruidoso (PID en
+frío, título si delegó a instancia propia; aviso si no hay ventana).
+Puerto guardado solo en frío; si delegó, se restaura el guardado.
+`boot.rs` nuevo flujo: reengancha por puerto guardado → login si
+fresco → reutiliza si suena → lanza + `ensure_spotify_tab` exigido
+(ruidoso, no silencioso). Sala P2 eliminada: tu Brave ya no bloquea.
+
+**Regla anti-regresión:** jamás lanzar sin `--user-data-dir` del
+perfil; jamás verificar ventana solo por clase (siempre PID o título
+Spotify + pestaña CDP). Si Spotify pide login y el perfil no es
+fresco, es bug (se borró la carpeta o cambió `RATA_SPOT_PROFILE`).
+
+**Para bebé:** la rata vivía arrimada en tu casa y cuando llegabas
+con visitas la mandaban al cuarto libre sin llaves propias. Ahora
+tiene su casita al lado con copia de tus llaves (un login y ya):
+entra y sale sin pedirte permiso owo.
+
+---
+
+## 30. Biblioteca muda en perfil nuevo: UI en inglés, selectores en español
+
+**Síntoma:** con el perfil dedicado recién creado, `cargo run` logueado
+y todo visible, la sidebar decía `biblioteca no lista: biblioteca:
+no-grid` para siempre. No era tamaño de ventana (se revirtió a
+1280x720 y seguía) ni login ni ventana vieja.
+
+**Causa técnica:** al quitar el `intl-es` de `SPOTIFY_URL`, el perfil
+nuevo sin cookies de locale sirve la UI en inglés: el grid se llama
+"Your Library", pero `LIBRARY_JS` buscaba exacto
+`[aria-label="Tu biblioteca"]` → `null` → `{error:'no-grid'}` → 3
+reintentos → `bail!`. El health NO lo gritaba porque `HEALTH_JS` sí
+tenía fallback ES/EN (`libGridAny`), así que el diag se veía sano
+mientras la lectura real moría. Gemelo dormido: `track_row_click_js`
+solo buscaba `aria-label^="Reproducir"` (en EN es "Play ...").
+
+**Fix:** `selectors/library_js.rs`: `pickGrid()` con cadena
+exacto-ES → label ES/EN (`/biblioteca|library/i`) → grid que ya trae
+filas `listrow-title-spotify:`; mismo fallback en `LIBRARY_DIAG_JS`
+para que el diag no mienta. `selectors/player.rs`: el botón de la
+fila acepta `Reproducir` o `Play`. El JS se evalúa en vivo por CDP:
+basta recompilar, sin reloguear ni borrar perfil.
+
+**Regla anti-regresión:** prohibido `aria-label` exacto en un solo
+idioma en JS de lectura/click (solo se permite en sondas con
+fallback). Todo label de UI va ES+EN como `PLAY_CLICK_JS`.
+
+**Para bebé:** la rata aprendió a pedir la biblioteca solo en español
+y en la casa nueva todos hablan inglés: tocaba y nadie abría. Ahora
+pregunta en los dos idiomas owo.
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
 
 
