@@ -536,6 +536,33 @@ se tocó, la música siguió sonando).
 
 ---
 
+## 27. Los álbumes no abrían (track-list vs playlist-tracklist)
+
+**Síntoma:** Enter en un álbum → `abriendo playlist...` eterno (TUI
+congelada hasta 16s: 10s esperando contenedor + 6s reintentando) y
+nunca mostraba canciones. Los caracteres raros del reporte eran
+copiado de terminal con líneas envueltas, no bug de render (la vista
+`ui/tracks.rs` dibuja bien).
+
+**Causa técnica:** la página de álbum usa
+`section[data-testid="album-page"]` con grid
+`data-testid="track-list"`, pero `open_playlist()` y `TRACKS_JS` solo
+aceptaban `playlist-tracklist` → espera imposible + `{error:
+'no-tracklist'}`. Las filas son idénticas adentro (`internal-track-link`,
+`a[href*="/artist/"]`, duración `m:ss`, botón `Reproducir ...`).
+
+**Fix:** `selectors.rs`: const `TRACKLIST_TESTIDS =
+["playlist-tracklist", "track-list"]` y los 4 snippets (exists, scroll
+top/down, snapshot) aceptan ambos; test de sincronía lo obliga.
+Mensajes neutros (`abriendo...`, `la pagina no cargo sus canciones`).
+Test vivo `album_tracks_se_leen` (ignorado): probado en vivo, 43/43
+rolas con número, título, artista y duración.
+
+**Para bebé:** la rata solo conocía la puerta de las playlists y se
+quedaba tocando la pared de los álbumes. Ahora toca las dos puertas owo.
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
 
 

@@ -37,9 +37,10 @@ pub const SIDEBAR_ID: &str = "#Desktop_LeftSidebar_Id";
 #[allow(dead_code)]
 pub const LIBRARY_ROW_PREFIX: &str = "listrow-title-spotify:";
 
-/// Contenedor del tracklist de playlist.
+/// Contenedor del tracklist: playlists usan `playlist-tracklist`,
+/// ÁLBUMES usan `track-list` (misma estructura de filas adentro).
 #[allow(dead_code)]
-pub const TRACKLIST_TESTID: &str = "playlist-tracklist";
+pub const TRACKLIST_TESTIDS: &[&str] = &["playlist-tracklist", "track-list"];
 
 /// Anchor del titulo de cada rola (estable, sin clases hash).
 #[allow(dead_code)]
@@ -53,9 +54,9 @@ pub const TRACK_PAGE_TESTID: &str = "track-page";
 // Snippets chicos (una expresion JS cada uno)
 // ---------------------------------------------------------------------------
 
-/// Existe el tracklist de la playlist (para open_playlist).
+/// Existe el tracklist de la colección (playlist o álbum).
 pub(crate) const TRACKLIST_EXISTS_JS: &str =
-    "!!document.querySelector('[data-testid=\"playlist-tracklist\"]')";
+    "!!(document.querySelector('[data-testid=\"playlist-tracklist\"]')||document.querySelector('[data-testid=\"track-list\"]'))";
 
 /// aria-label del boton play/pause ("" si no hay player).
 pub(crate) const PLAYER_ARIA_JS: &str =
@@ -63,10 +64,10 @@ pub(crate) const PLAYER_ARIA_JS: &str =
 
 /// Scrollea el tracklist al inicio (el lector lo deja al fondo y las
 /// primeras filas quedan virtualizadas, fuera del DOM).
-pub(crate) const TRACKLIST_SCROLL_TOP_JS: &str = "(() => { const g = document.querySelector('[data-testid=\"playlist-tracklist\"]'); const b = g ? g.closest('[data-overlayscrollbars-viewport]') : null; if (!b) return 'no-box'; b.scrollTop = 0; return 'ok'; })()";
+pub(crate) const TRACKLIST_SCROLL_TOP_JS: &str = "(() => { const g = document.querySelector('[data-testid=\"playlist-tracklist\"],[data-testid=\"track-list\"]'); const b = g ? g.closest('[data-overlayscrollbars-viewport]') : null; if (!b) return 'no-box'; b.scrollTop = 0; return 'ok'; })()";
 
 /// Baja una pagina del tracklist (para filas virtualizadas).
-pub(crate) const TRACKLIST_SCROLL_JS: &str = r#"(() => { const g = document.querySelector('[data-testid="playlist-tracklist"]');
+pub(crate) const TRACKLIST_SCROLL_JS: &str = r#"(() => { const g = document.querySelector('[data-testid="playlist-tracklist"],[data-testid="track-list"]');
           const b = g ? g.closest('[data-overlayscrollbars-viewport]') : null;
           if (!b) return 'no-box'; b.scrollTop += 800; return 'ok'; })()"#;
 
@@ -241,8 +242,9 @@ pub(crate) const SEARCH_JS: &str = r#"(async () => {
 
 /// Un evaluate async: scrollea el contenedor principal leyendo filas por
 /// `a[data-testid="internal-track-link"]` (estable, sin clases hash).
+/// Sirve para playlists Y álbumes (mismas filas, distinto contenedor).
 pub(crate) const TRACKS_JS: &str = r#"(async () => {
-  const grid = document.querySelector('[data-testid="playlist-tracklist"]');
+  const grid = document.querySelector('[data-testid="playlist-tracklist"],[data-testid="track-list"]');
   if (!grid) return JSON.stringify({error:'no-tracklist'});
   const box = grid.closest('[data-overlayscrollbars-viewport]')
     || document.querySelector('.main-view-container [data-overlayscrollbars-viewport]');
@@ -432,10 +434,14 @@ mod tests {
         assert!(SEARCH_JS.contains("/track/"));
         assert!(SEARCH_JS.contains(SIDEBAR_ID));
         assert!(TRACKS_JS.contains(TRACK_LINK_TESTID));
-        assert!(TRACKS_JS.contains(TRACKLIST_TESTID));
-        assert!(TRACKLIST_EXISTS_JS.contains(TRACKLIST_TESTID));
-        assert!(TRACKLIST_SCROLL_TOP_JS.contains(TRACKLIST_TESTID));
-        assert!(TRACKLIST_SCROLL_JS.contains(TRACKLIST_TESTID));
+        assert!(TRACKS_JS.contains(TRACKLIST_TESTIDS[0]));
+        assert!(TRACKS_JS.contains(TRACKLIST_TESTIDS[1]));
+        assert!(TRACKLIST_EXISTS_JS.contains(TRACKLIST_TESTIDS[0]));
+        assert!(TRACKLIST_EXISTS_JS.contains(TRACKLIST_TESTIDS[1]));
+        assert!(TRACKLIST_SCROLL_TOP_JS.contains(TRACKLIST_TESTIDS[0]));
+        assert!(TRACKLIST_SCROLL_TOP_JS.contains(TRACKLIST_TESTIDS[1]));
+        assert!(TRACKLIST_SCROLL_JS.contains(TRACKLIST_TESTIDS[0]));
+        assert!(TRACKLIST_SCROLL_JS.contains(TRACKLIST_TESTIDS[1]));
         assert!(PLAYER_ARIA_JS.contains(PLAY_TESTIDS[0]));
         assert!(DASHBOARD_JS.contains(TRACK_PAGE_TESTID));
         assert!(track_row_click_js("abc123").contains(TRACK_LINK_TESTID));

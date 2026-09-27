@@ -1,7 +1,8 @@
-//! Canciones de una playlist: leer el tracklist del DOM y tocar por track.
+//! Canciones de una colección (playlist o álbum): leer el tracklist del
+//! DOM y tocar por track.
 //!
-//! La pagina de playlist tiene grid virtualizado
-//! `[data-testid="playlist-tracklist"] [role="row"]` con filas como:
+//! La pagina tiene grid virtualizado (`playlist-tracklist` en playlists,
+//! `track-list` en álbumes) con filas `[role="row"]` como:
 //! numero + `a[data-testid="internal-track-link"][href$=/track/{id}]`
 //! (titulo) + links `a[href*="/artist/"]` + duracion `m:ss`.
 //! Cada fila trae `button[aria-label="Reproducir ..."]` para tocarla
