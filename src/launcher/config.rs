@@ -84,7 +84,8 @@ pub fn is_brave_running() -> bool {
     }
 }
 
-/// Perfil aislado de rata-spot (reservado para el modo oculto final).
+/// Perfil aislado de rata-spot (reservado: abrirlo pediría login nuevo,
+/// y el requisito es usar tus cuentas ya logueadas — ver bitácora #26).
 /// Ahora lanzamos con el perfil normal para reutilizar tu login.
 #[allow(dead_code)]
 pub fn rata_profile_dir() -> PathBuf {

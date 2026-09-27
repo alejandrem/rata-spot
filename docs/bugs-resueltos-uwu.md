@@ -515,6 +515,27 @@ owo.
 
 ---
 
+## 26. Modo aislado P3: perfil propio sin delegación [REVERTIDO]
+
+**Idea:** `RATA_SPOT_ISOLATED=1` lanzaba con su propio
+`--user-data-dir` (arranque siempre en frío, sin delegación).
+
+**Por qué se revirtió:** el requisito real es abrir Brave CON las
+cuentas ya logueadas; el perfil aislado nace vacío y pide re-login.
+Brave con tus cuentas = perfil normal, punto. Quedan vigentes P0/P1
+(puerto efímero + origins acotados) y P2 (sala de espera).
+
+**Lección de test:** el test vivo `aislado_lanza_y_limpia` ponía asserts
+ANTES del cleanup; al tronar un assert (DevToolsActivePort ausente con
+puerto explícito: Chromium solo lo escribe siempre con puerto 0), el
+`cleanup()` se saltaba y la ventana quedaba huérfana. Regla nueva: en
+tests vivos, el cleanup va con guardia (o antes de los asserts que
+pueden tronar), nunca al final feliz. El huérfano se cazó por
+`CommandLine` con filtro `rata-spot-brave-profile` (el Brave normal ni
+se tocó, la música siguió sonando).
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
 
 
