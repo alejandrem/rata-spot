@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use super::config::{
     brave_flags_base, find_brave_exe, SPOTIFY_URL, WINDOW_HIDDEN, WINDOW_VISIBLE,
 };
+use super::ports::{debug_flags, set_cdp_port, wanted_cdp_port};
 use super::window::{close_our_windows, snapshot_brave_windows, window_slot};
 
 /// Handle global del proceso Brave que nosotros lanzamos (si aplica).
@@ -47,11 +48,19 @@ pub async fn launch_brave_spotify() -> Result<bool> {
     let hidden = std::env::var("RATA_SPOT_HIDDEN").map(|v| v == "1").unwrap_or(false);
     let visible = !hidden;
 
+    // Puerto CDP de ESTE arranque (efimero; RATA_SPOT_PORT lo fija).
+    // Se publica antes del spawn para que el transporte lo use.
+    let cdp_port = wanted_cdp_port()?;
+    set_cdp_port(cdp_port);
+
     // Foto de ventanas antes: lo nuevo que aparezca es NUESTRA ventana.
     let baseline = snapshot_brave_windows();
 
     let mut cmd = Command::new(&brave_exe);
     cmd.args(brave_flags_base());
+    for flag in debug_flags(cdp_port) {
+        cmd.arg(flag);
+    }
     // Tu perfil: sin --user-data-dir para conservar tus logins.
     cmd.arg(if visible {
         WINDOW_VISIBLE

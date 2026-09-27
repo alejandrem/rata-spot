@@ -6,10 +6,12 @@
 //!
 //! Tareas (1 archivo = 1 tarea):
 //! - config: URL, flags, rutas de brave.exe y perfil
+//! - ports: puerto CDP efimero + origins acotados (P0/P1)
 //! - process: spawn del hijo + lanzamiento + cleanup al salir
 //! - window: rastreo HWND (EnumWindows) + cierre quirurgico con WM_CLOSE
 
 pub mod config;
+pub mod ports;
 pub mod process;
 pub mod window;
 

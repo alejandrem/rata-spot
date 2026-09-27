@@ -460,6 +460,35 @@ mano como siempre owo.
 
 ---
 
+## 24. Puerto 9222 fijo + `--remote-allow-origins=*` (P0/P1)
+
+**Síntoma:** el puerto fijo colisiona con otras herramientas y es un
+objetivo famoso; el `*` anulaba la defensa de Origin de Chromium
+(cualquier web visitada podía manejar el Brave por CDP: cookies,
+navegación, JS en tus sesiones).
+
+**Causa técnica:** flags estáticos en `launcher/config.rs` y
+`transport.rs` con `CDP_PORT = 9222` clavado.
+
+**Fix:** nuevo `src/launcher/ports.rs`: al lanzar se aparta un puerto
+libre de verdad (bind a `127.0.0.1:0`), se publica para el transporte y
+los flags salen como `--remote-debugging-port={p}` +
+`--remote-allow-origins=http://127.0.0.1:{p}` (acotado, jamás `*`: ni el
+HTTP crudo ni tungstenite mandan `Origin`, así que pasa el check igual).
+El transporte prueba `[nuestro puerto, 9222 legacy]` para no romper al
+Brave ya abierto con flags viejos. `RATA_SPOT_PORT` fija el puerto a
+mano. Tests: candidatos sin duplicar, flags sin wildcard, puerto
+enlazable. Riesgo conocido: Brave ya abierto SIN depuración sigue
+degradando a GSMTC (eso es P2, pendiente).
+
+**Para bebé:** antes la puerta de tu casa era siempre la misma (9222) y
+con letrero de "pasen todos" (`*`). Ahora cada arranque usa una puerta
+distinta que solo tú conoces, y el letrero dice "solo la rata" owo. Si
+llegas y la casa ya estaba abierta de antes, tocas la puerta vieja por
+si acaso.
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
 
 

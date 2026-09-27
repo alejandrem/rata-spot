@@ -12,7 +12,7 @@ Toda lectura o click viaja por 3 capas. De afuera hacia adentro:
 
 ```
 TUI (keys.rs / library.rs)
-  → 1. HTTP crudo a localhost:9222      (transport.rs)
+  → 1. HTTP crudo a localhost:{puerto}   (transport.rs)
   → 2. WebSocket de la pestaña          (client.rs)
   → 3. JavaScript dentro de la página   (selectors.rs / api.rs)
 ```
@@ -25,6 +25,11 @@ Sin `reqwest` a propósito: solo se necesita `GET` a localhost.
 |---|---|
 | `/json/list`   | Listar pestañas y hallar la de Spotify      |
 | `/json/version`| Hallar el WS del navegador (crear pestaña) |
+
+El puerto es dinámico: al lanzar se aparta uno libre (`launcher/ports.rs`)
+y se publica para el transporte; si no hay (Brave ya abierto con flags
+viejos o a mano), se prueba el 9222 legacy. Orígenes siempre acotados a
+`http://127.0.0.1:{puerto}`, jamás `*` (ver entrada 24 de la bitácora).
 
 Reglas aprendidas a golpes (ver `bugs-resueltos-uwu.md` #10 y #11):
 

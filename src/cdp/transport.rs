@@ -13,20 +13,38 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub const CDP_HOST: &str = "127.0.0.1";
-pub const CDP_PORT: u16 = 9222;
 
 /// GET a un endpoint CDP (/json/list, /json/version) con timeout global.
-/// localhost responde en ms; si algo cuelga, fallar rapido.
+/// Prueba los puertos candidatos en orden: el de este arranque y luego el
+/// 9222 legacy (Brave ya abierto con flags viejos o a mano). localhost
+/// responde en ms; si algo cuelga, fallar rapido.
 pub(crate) async fn fetch_cdp_text(path: &str) -> Result<String> {
     tokio::time::timeout(Duration::from_secs(8), async {
-        let mut stream = TcpStream::connect((CDP_HOST, CDP_PORT))
-            .await
-            .context("sin puerto CDP (Brave sin --remote-debugging-port)")?;
+        let mut last_err = anyhow::anyhow!("sin puerto CDP (Brave sin --remote-debugging-port)");
+        for port in crate::launcher::ports::live_candidates() {
+            match fetch_from_port(path, port).await {
+                Ok(body) => return Ok(body),
+                Err(e) => last_err = e,
+            }
+        }
+        Err::<String, _>(last_err)
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("timeout hablando con CDP"))?
+}
 
-        let req = format!(
-            "GET {path} HTTP/1.1\r\nHost: {CDP_HOST}:{CDP_PORT}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
-        );
-        stream.write_all(req.as_bytes()).await?;
+/// Un intento contra un solo puerto (sin timeout propio: lo pone el padre).
+async fn fetch_from_port(path: &str, port: u16) -> Result<String> {
+    let mut stream = TcpStream::connect((CDP_HOST, port))
+        .await
+        .with_context(|| {
+            format!("sin puerto CDP en {CDP_HOST}:{port} (Brave sin --remote-debugging-port)")
+        })?;
+
+    let req = format!(
+        "GET {path} HTTP/1.1\r\nHost: {CDP_HOST}:{port}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
+    );
+    stream.write_all(req.as_bytes()).await?;
 
         let mut buf: Vec<u8> = Vec::new();
         let mut tmp = [0u8; 4096];
@@ -80,9 +98,6 @@ pub(crate) async fn fetch_cdp_text(path: &str) -> Result<String> {
         }
         body.truncate(len);
         Ok(String::from_utf8_lossy(&body).into_owned())
-    })
-    .await
-    .map_err(|_| anyhow::anyhow!("timeout hablando con CDP"))?
 }
 
 /// GET /json/list via el lector robusto.

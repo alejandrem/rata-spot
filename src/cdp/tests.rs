@@ -1,4 +1,5 @@
-//! Pruebas vivas contra el Brave real (requieren CDP en :9222).
+//! Pruebas vivas contra el Brave real (requieren CDP del Brave depurable:
+//! puerto del arranque o 9222 legacy).
 //! Si pasan, el flujo completo TUI -> Brave -> musica funciona.
 
 use super::*;

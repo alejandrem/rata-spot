@@ -10,7 +10,9 @@ pub const SPOTIFY_URL: &str = "https://open.spotify.com/intl-es/";
 /// `--disable-gpu` queda FUERA por defecto: ver Fase 5.4 (Widevine DRM).
 /// `--single-process` DESACTIVADO: rompe Widevine/sandbox y Spotify
 /// cierra la ventana al instante (el plan lo permite).
-/// `--remote-debugging-port`: CDP para iniciar musica con [space] sin mouse.
+/// Los flags de depuracion (puerto + origins) NO van aqui: se construyen
+/// por arranque en `ports::debug_flags` (puerto efimero + origins
+/// acotados a 127.0.0.1, jamas `*`: ver ports.rs P0/P1).
 const BRAVE_FLAGS_BASE: &[&str] = &[
     "--disable-extensions",
     "--disable-background-networking",
@@ -29,12 +31,10 @@ const BRAVE_FLAGS_BASE: &[&str] = &[
     "--autoplay-policy=no-user-gesture-required",
     "--no-first-run",
     // CDP para que la TUI inicie musica con [space] sin tocar el mouse.
-    // Sin esto no hay forma de darle play a una pagina fresca (GSMTC solo
-    // controla lo que YA suena). Si Brave ya estaba abierto sin este flag,
-    // el puerto no existe y space degradada a GSMTC (dale play una vez).
-    "--remote-debugging-port=9222",
-    "--remote-allow-origins=*",
-    // OPCIONAL (Fase 5.4): "--disable-gpu",
+    // (puerto + origins los pone ports::debug_flags por arranque).
+    // Sin puerto no hay forma de darle play a una pagina fresca (GSMTC solo
+    // controla lo que YA suena). Si Brave ya estaba abierto sin depuracion,
+    // space degrada a GSMTC (dale play una vez).
 ];
 
 pub(crate) const WINDOW_HIDDEN: &str = "--window-position=-32000,-32000";

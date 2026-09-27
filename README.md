@@ -96,6 +96,7 @@ el estado real del DOM y GSMTC.
 | `RATA_SPOT_HIDDEN=1` | Brave oculto fuera de pantalla (debug: visible) |
 | `RATA_SPOT_NOGPU=1` | Prueba `--disable-gpu` (~20MB menos, puede romper Widevine) |
 | `RATA_SPOT_API=0` | Buscador solo por DOM (apaga el intento JSON/red) |
+| `RATA_SPOT_PORT=9333` | Fija el puerto CDP (default: efímero + fallback 9222) |
 
 </details>
 
