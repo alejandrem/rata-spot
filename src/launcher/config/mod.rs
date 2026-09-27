@@ -31,7 +31,6 @@ pub const SPOTIFY_URL: &str = "https://open.spotify.com/";
 /// acotados a 127.0.0.1, jamas `*`: ver ports.rs P0/P1).
 const BRAVE_FLAGS_BASE: &[&str] = &[
     "--disable-extensions",
-    "--disable-background-networking",
     "--disable-background-timer-throttling",
     "--disable-backgrounding-occluded-windows",
     "--disable-sync",
