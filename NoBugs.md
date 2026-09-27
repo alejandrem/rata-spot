@@ -41,4 +41,20 @@ Esos 100-200MB liberados se sienten en una PC humilde. Y las 4933 líneas están
 
 ---
 
+## 3. Se ve el iconito de Brave en taskbar / Alt+Tab aunque la ventana está oculta.
+
+**Crítica original:**
+> Si está en segundo plano, ¿por qué sigue el logo?
+
+**Respuesta rata owo:**
+Sí, es comportamiento esperado y se queda así unu.
+
+La ventana vive en `--window-position=-32000,-32000`: movida fuera de pantalla, no destruida. Para Windows sigue siendo una ventana normal, por eso sale en taskbar, Alt+Tab y vista de tareas. Darle click no muestra nada porque está a -32000 jajaja.
+
+Se probó esconder solo el icono volviéndola tool-window (`WS_EX_TOOLWINDOW` sin `SW_HIDE`, en `src/launcher/window.rs`): Windows sí lo aplicaba pero Brave recreaba el HWND / reseteaba el estilo al navegar y el icono volvía. Re-aplicarlo en loop es más guerra de la que vale y el `SW_HIDE` total empeora el throttling (sin frames fallan `LIBRARY_JS` / `TRACKS_JS` y el health cae).
+
+Decisión: se deja el iconito. Es el impuesto rata 🐀. La ventana sigue pintando en -32000, que es lo que mantiene la biblioteca y el tracklist vivos.
+
+---
+
 *Fin — no son bugs, son decisiones 🐀 owo*
