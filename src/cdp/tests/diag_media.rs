@@ -8,7 +8,13 @@ use std::time::Duration;
 async fn diag_media() {
     use crate::cdp::client::cdp_call;
     use crate::cdp::tabs::spotify_ws_url;
-    let ws = spotify_ws_url().await.expect("sin tab");
+    let ws = match spotify_ws_url().await {
+        Ok(ws) => ws,
+        Err(e) => {
+            println!("DIAG-MEDIA: sin Brave/CDP ({e}) — abre rata-spot y reintenta");
+            return;
+        }
+    };
     let js = r#"(() => {
       const els = [...document.querySelectorAll('audio,video')].map(m => ({
         tag: m.tagName, paused: m.paused, muted: m.muted, vol: m.volume,
@@ -20,14 +26,20 @@ async fn diag_media() {
         audible: document.querySelectorAll('audio,video').length, media: els});
     })()"#;
     for i in 0..2 {
-        let v = cdp_call(
+        let v = match cdp_call(
             &ws,
             51,
             "Runtime.evaluate",
             serde_json::json!({ "expression": js, "returnByValue": true }),
         )
         .await
-        .expect("evaluate");
+        {
+            Ok(v) => v,
+            Err(e) => {
+                println!("DIAG-MEDIA[{i}]: evaluate fallo ({e})");
+                return;
+            }
+        };
         println!(
             "DIAG-MEDIA[{i}]: {}",
             v.pointer("/result/result/value").and_then(|x| x.as_str()).unwrap_or("?")
@@ -41,9 +53,15 @@ async fn diag_media() {
 async fn diag_space() {
     use crate::cdp::client::cdp_call;
     use crate::cdp::tabs::spotify_ws_url;
-    let ws = spotify_ws_url().await.expect("sin tab");
+    let ws = match spotify_ws_url().await {
+        Ok(ws) => ws,
+        Err(e) => {
+            println!("DIAG-SPACE: sin Brave/CDP ({e}) — abre rata-spot y reintenta");
+            return;
+        }
+    };
     for typ in ["keyDown", "keyUp"] {
-        cdp_call(
+        if let Err(e) = cdp_call(
             &ws,
             60,
             "Input.dispatchKeyEvent",
@@ -56,7 +74,10 @@ async fn diag_space() {
             }),
         )
         .await
-        .expect("tecla");
+        {
+            println!("DIAG-SPACE: tecla {typ} fallo ({e})");
+            return;
+        }
     }
     println!("DIAG-SPACE: enviado");
 }
@@ -66,7 +87,13 @@ async fn diag_space() {
 async fn diag_play_buttons() {
     use crate::cdp::client::cdp_call;
     use crate::cdp::tabs::spotify_ws_url;
-    let ws = spotify_ws_url().await.expect("sin tab");
+    let ws = match spotify_ws_url().await {
+        Ok(ws) => ws,
+        Err(e) => {
+            println!("DIAG-BTN: sin Brave/CDP ({e}) — abre rata-spot y reintenta");
+            return;
+        }
+    };
     let js = r#"(() => {
       const vis = (b) => b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !!b.offsetParent;
       const out = [];
@@ -80,14 +107,20 @@ async fn diag_play_buttons() {
       });
       return JSON.stringify({url: location.href, title: document.title.slice(0,50), buttons: out});
     })()"#;
-    let v = cdp_call(
+    let v = match cdp_call(
         &ws,
         50,
         "Runtime.evaluate",
         serde_json::json!({ "expression": js, "returnByValue": true }),
     )
     .await
-    .expect("evaluate");
+    {
+        Ok(v) => v,
+        Err(e) => {
+            println!("DIAG-BTN: evaluate fallo ({e})");
+            return;
+        }
+    };
     println!(
         "DIAG-BTN: {}",
         v.pointer("/result/result/value").and_then(|x| x.as_str()).unwrap_or("?")

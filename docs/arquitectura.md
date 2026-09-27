@@ -98,9 +98,6 @@ src/
     ports.rs                     # Puerto CDP efímero + origins a 127.0.0.1 (P0/P1) + RATA_SPOT_PORT.
     process.rs                   # launch (--user-data-dir + debug_flags + verificación HWND/PID) + cleanup.
     window.rs                    # Snapshot EnumWindows + window_pid/window_title + WM_CLOSE solo a lo nuestro.
-    ports.rs                     # Puerto CDP efímero + origins a 127.0.0.1 (P0/P1) + RATA_SPOT_PORT.
-    process.rs                   # launch_brave_spotify (--new-window + debug_flags + HWND) + cleanup al salir.
-    window.rs                    # Snapshot EnumWindows (Chrome_WidgetWin_1) + WM_CLOSE solo a lo nuestro.
   ui/                            # TUI Ratatui: sidebar + player + centro por vista.
     mod.rs                       # render raíz: split 32% sidebar | reproductor.
     state/                       # Estado + navegación con wrap/throttle.
