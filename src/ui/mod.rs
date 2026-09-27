@@ -3,8 +3,8 @@
 //! Layout: sidebar IZQUIERDA (Tu biblioteca) + columna principal con
 //! header, progreso, centro y footer.
 //!
-//! Tareas (1 archivo = 1 tarea):
-//! - state: AppState + seleccion de biblioteca
+//! Tareas (1 carpeta = 1 dominio):
+//! - state/: view/library_nav/tracks_nav/search_nav/detail_nav
 //! - player: header, barra de progreso, centro y footer
 //! - sidebar: panel izquierdo con Tu biblioteca (j/k + Enter)
 

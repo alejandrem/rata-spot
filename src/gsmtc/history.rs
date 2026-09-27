@@ -6,9 +6,16 @@ use std::time::Duration;
 use super::track::TrackInfo;
 
 /// Ruta del historial (UTF-8, emojis incluidos sin problema).
+/// Sin `C:\` quemado: LOCALAPPDATA -> USERPROFILE -> temp (siempre escribible).
 fn last_track_path() -> std::path::PathBuf {
-    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
-    std::path::PathBuf::from(base).join("rata-spot-last-track.txt")
+    for key in ["LOCALAPPDATA", "USERPROFILE"] {
+        if let Ok(v) = std::env::var(key) {
+            if !v.trim().is_empty() {
+                return std::path::PathBuf::from(v).join("rata-spot-last-track.txt");
+            }
+        }
+    }
+    std::env::temp_dir().join("rata-spot-last-track.txt")
 }
 
 /// Guarda la ultima cancion en disco. Formato simple de 6 lineas.

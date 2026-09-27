@@ -1,4 +1,4 @@
-//! Estado de la TUI: smoother + conexion + biblioteca + canciones.
+//! View: struct AppState + vista central + throttle de flechas.
 
 use std::time::{Duration, Instant};
 
@@ -22,8 +22,7 @@ pub struct AppState {
     pub smoother: ProgressSmoother,
     /// false mientras GSMTC aun no registra sesion Brave.
     pub connected: bool,
-    /// Diagnostico visible en la TUI (qué Brave lanzamos / PID / URL).
-    /// Los println! de antes quedaban ocultos bajo la pantalla alternativa.
+    /// Diagnostico visible en la TUI (qué navegador lanzamos / PID / URL).
     pub status: String,
     /// Biblioteca leida del DOM (carga en fondo al arrancar).
     pub library: Vec<LibraryItem>,
@@ -52,12 +51,11 @@ pub struct AppState {
     pub detail_msg: String,
     pub lyr_scroll: u16,
     /// Throttle de flechas: ultimo movimiento aceptado.
-    last_nav: Instant,
+    pub(crate) last_nav: Instant,
 }
 
-/// Delay minimo entre movimientos de flecha (120ms): dejarla
-/// presionada no debe volar la lista.
-const NAV_DELAY: Duration = Duration::from_millis(120);
+/// Delay minimo entre movimientos de flecha (120ms).
+pub(crate) const NAV_DELAY: Duration = Duration::from_millis(120);
 
 impl Default for AppState {
     fn default() -> Self {
@@ -105,22 +103,7 @@ impl AppState {
         self.smoother.display_track()
     }
 
-    /// Mover seleccion de la biblioteca (j/k), con wrap.
-    pub fn pl_move(&mut self, delta: i32) {
-        if self.library.is_empty() {
-            return;
-        }
-        let n = self.library.len() as i32;
-        self.pl_index = (self.pl_index as i32 + delta).rem_euclid(n) as usize;
-        self.pl_state.select(Some(self.pl_index));
-    }
-
-    pub fn pl_selected(&self) -> Option<&LibraryItem> {
-        self.library.get(self.pl_index)
-    }
-
     /// Throttle: true si ya paso el delay desde el ultimo movimiento.
-    /// Asi la flecha sostenida avanza a ritmo legible, no volando.
     pub fn nav_ok(&mut self) -> bool {
         if self.last_nav.elapsed() >= NAV_DELAY {
             self.last_nav = Instant::now();
@@ -128,44 +111,6 @@ impl AppState {
         } else {
             false
         }
-    }
-
-    /// Mover seleccion de canciones (j/k en vista Tracks), con wrap.
-    pub fn tr_move(&mut self, delta: i32) {
-        if self.tracks.is_empty() {
-            return;
-        }
-        let n = self.tracks.len() as i32;
-        self.tr_index = (self.tr_index as i32 + delta).rem_euclid(n) as usize;
-        self.tr_state.select(Some(self.tr_index));
-    }
-
-    pub fn tr_selected(&self) -> Option<&TrackItem> {
-        self.tracks.get(self.tr_index)
-    }
-
-    /// Mover seleccion de resultados (j/k en vista Search), con wrap.
-    pub fn sr_move(&mut self, delta: i32) {
-        if self.results.is_empty() {
-            return;
-        }
-        let n = self.results.len() as i32;
-        self.sr_index = (self.sr_index as i32 + delta).rem_euclid(n) as usize;
-        self.sr_state.select(Some(self.sr_index));
-    }
-
-    pub fn sr_selected(&self) -> Option<&LibraryItem> {
-        self.results.get(self.sr_index)
-    }
-
-    /// Scrollear letra del dashboard (j/k en vista Detail), con tope.
-    pub fn lyr_move(&mut self, delta: i32) {
-        let max = self
-            .detail
-            .as_ref()
-            .map(|d| d.lyrics.len().saturating_sub(1))
-            .unwrap_or(0) as i32;
-        self.lyr_scroll = (self.lyr_scroll as i32 + delta).clamp(0, max.max(0)) as u16;
     }
 
     /// Volver a la vista biblioteca (← / Esc). Apaga la escritura.

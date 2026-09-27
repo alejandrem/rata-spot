@@ -1,9 +1,9 @@
-//! Orquestacion de la app (loop TUI) por tareas, 1 archivo = 1 tarea:
+//! Orquestacion de la app (loop TUI) por tareas, 1 carpeta = 1 dominio:
 //!
 //! - terminal: setup/restore del terminal (raw + pantalla alternativa)
-//! - boot: arranque (reutilizar sesion o lanzar Brave nuevo)
-//! - keys: teclado (Press/Repeat/Release + acciones por tecla)
-//! - sync: reintento de sesion + refresh del track por tick
+//! - boot: arranque (reutilizar sesion o lanzar navegador nuevo)
+//! - keys/: search_mode/playback/navigate/open/view_keys + dispatcher
+//! - sync/: state/tick/switch (reintento + refresh por tick)
 //! - library: carga de biblioteca en fondo (DOM tarda segundos)
 //! - run: el loop que une todo + pausa/cleanup al salir
 

@@ -4,10 +4,10 @@
 //! que expone titulo/artista/progreso y play/pause/next/prev.
 //! Brave se registra solo, sin configuracion extra.
 //!
-//! Tareas (1 archivo = 1 tarea):
+//! Tareas (1 carpeta = 1 dominio, 1 archivo = 1 tarea):
 //! - track: tipos TrackInfo + conversiones de tiempo
-//! - session: sesion Brave, lectura y controles de transporte
-//! - smoother: progreso suave (interpola entre rafagas de Spotify)
+//! - session/: find/pick/read/control (sesion + lectura + transporte)
+//! - smoother/: update/display (interpola entre rafagas de Spotify)
 //! - history: ultima cancion persistida en disco (UTF-8)
 
 pub mod history;

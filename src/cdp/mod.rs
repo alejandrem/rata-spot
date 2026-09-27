@@ -9,17 +9,18 @@
 //! Si el puerto no existe (Brave abierto a mano sin el flag), regresa error
 //! y la TUI muestra "dale play una vez en Brave".
 //!
-//! Tareas (1 archivo = 1 tarea):
-//! - transport: HTTP crudo a /json/* (sin reqwest para no engordar deps)
+//! Tareas (1 carpeta = 1 dominio, 1 archivo = 1 tarea):
+//! - transport/: HTTP crudo a /json/* (sin reqwest)
 //! - client: llamada WS generica {id, method, params}
 //! - tabs: localizar/crear la pestana Spotify
-//! - selectors: TODOS los selectores del DOM + health-check (un solo lugar)
-//! - api: capa JSON/red (token web + search estable, fallback al DOM)
+//! - selectors/: nombres + player/tracklist/library/search/dashboard/health
+//! - api/: fetch/token/search/probe (token web + search estable)
 //! - playback: click al Play + flujo del primer play
 //! - library: leer "Tu biblioteca"
 //! - search: buscador (API primero, DOM como fallback)
 //! - track_page: dashboard individual (header + letra)
-//! - tests: pruebas vivas (primer play + listado)
+//! - tracks/: open/read/play_uri/play_track
+//! - tests/: playback_live/search_live/dashboard_live/library_live/diag_*
 
 mod api;
 mod client;

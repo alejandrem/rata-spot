@@ -41,8 +41,8 @@ pub fn child_pid() -> Option<u32> {
 /// - MODO DEBUG (temporal): ventana VISIBLE siempre, salvo `RATA_SPOT_HIDDEN=1`.
 pub async fn launch_brave_spotify() -> Result<bool> {
     let brave_exe = find_brave_exe().context(
-        "no se encontro brave.exe en rutas comunes. \
-         Instala Brave o ajusta find_brave_exe()",
+        "no se encontro ningun Chromium (brave/chrome/edge/chromium). \
+         Instala Brave o Edge, o fija la ruta con RATA_SPOT_BRAVE=\"C:\\ruta\\brave.exe\"",
     )?;
 
     let hidden = std::env::var("RATA_SPOT_HIDDEN").map(|v| v == "1").unwrap_or(false);
