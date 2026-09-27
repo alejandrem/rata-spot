@@ -489,6 +489,32 @@ si acaso.
 
 ---
 
+## 25. Brave abierto pero sordo: hijo inútil + "reinicia todo" (P2)
+
+**Síntoma:** con Brave abierto a mano (sin CDP), el boot spawneaba un
+hijo que solo delegaba `--new-window` y moría, `space` degradaba y el
+mensaje te mandaba a cerrar todo y reiniciar la app.
+
+**Causa técnica:** `boot()` solo distinguía "hay sesión GSMTC / no la
+hay"; nunca preguntaba si había PUERTO CDP (`/json/list`) ni si
+`brave.exe` seguía vivo.
+
+**Fix:** boot en 3 estados con `cdp::debug_alive()` (un GET a
+`/json/list`) + `is_brave_running()` (tasklist): con Brave sordo se
+entra a sala de espera (println visibles pre-TUI, sin spawnear nada),
+y al detectar el cierre se auto-lanza en frío —ahí sí aplican los
+flags— y el boot continúa solo (con 2s de respiro al SO para no delegar
+al cadáver). Si aparece CDP solo, se sigue sin lanzar. Sin timeout
+(filosofía del proyecto); Ctrl+C cancela sin limpiar nada porque nada
+se lanzó.
+
+**Para bebé:** antes tocabas a una puerta sorda y te mandaban a tu casa
+a reiniciar la vida. Ahora la rata espera sentada en la banqueta,
+cuando sales y cierras, ella solita abre la puerta buena y te avisa
+owo.
+
+---
+
 *Fin de la bitácora — buena suerte rata 🐀 uwu*
 
 

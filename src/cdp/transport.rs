@@ -105,6 +105,12 @@ pub(crate) async fn fetch_json_list() -> Result<String> {
     fetch_cdp_text("/json/list").await
 }
 
+/// ¿Hay puerto CDP vivo? (para el boot P2: distinguir "Brave sordo" de
+/// "Brave cerrado"). Barato: un GET a /json/list.
+pub async fn debug_alive() -> bool {
+    fetch_json_list().await.is_ok()
+}
+
 fn find_crlf2(hay: &[u8]) -> Option<usize> {
     hay.windows(4).position(|w| w == b"\r\n\r\n")
 }

@@ -204,7 +204,8 @@ src/cdp/transport.rs  # HTTP/1.1 + Content-Length/chunked + timeout 8s
 src/cdp/tabs.rs       # hallar/crear pestaña + spa_navigate (no mata audio)
 src/cdp/search.rs     # API primero, DOM después
 src/cdp/tests.rs      # diag_* (imprimen, no revientan) + vivos #[ignore]
-src/app/boot.rs       # health_summary() en el status de la TUI
+src/app/boot.rs       # health_summary() en el status + sala de espera P2
+                    # (Brave sordo: espera el cierre y auto-lanza en frío)
 ```
 
 Y si todo falla: `diag_media` + `diag_gsmtc` te dicen si el problema es
