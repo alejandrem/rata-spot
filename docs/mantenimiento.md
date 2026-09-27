@@ -14,7 +14,7 @@ Toda lectura o click viaja por 3 capas. De afuera hacia adentro:
 TUI (keys.rs / library.rs)
   → 1. HTTP crudo a localhost:{puerto}   (transport.rs)
   → 2. WebSocket de la pestaña          (client.rs)
-  → 3. JavaScript dentro de la página   (selectors.rs / api.rs)
+  → 3. JavaScript dentro de la página   (selectors/ / api/)
 ```
 
 ### Capa 1 — HTTP crudo (`cdp/transport.rs`)
@@ -90,7 +90,7 @@ Métodos CDP que usamos (y nada más):
 
 Hay DOS sabores, en este orden de preferencia:
 
-**a) JSON/red (`cdp/api.rs`)** — `fetch` DENTRO de la página (lleva
+**a) JSON/red (`cdp/api/`)** — `fetch` DENTRO de la página (lleva
 cookies y login de Brave). Lo que se manda:
 
 ```js
@@ -106,13 +106,14 @@ y regresa `{status, body}` recortado a 30000 chars. Hoy intenta:
 2. `GET https://api.spotify.com/v1/search?q=...&type=track,artist,playlist,album&limit=12`
    con ese token → JSON documentado con `{uri, name, artists}`.
 
-**b) DOM (`cdp/selectors.rs`)** — evaluates que leen el documento y
+**b) DOM (`cdp/selectors/`)** — evaluates que leen el documento y
 regresan **string con JSON adentro** (doble parseo: primero el CDP,
 luego `serde_json::from_str` en Rust). Si algo falta, el JS regresa
 `{error:'no-grid'}` / `{error:'no-tracklist'}` / `{error:'no-track-page'}`
 y Rust lo convierte en `anyhow::bail!` legible. Los bloques grandes
 (`LIBRARY_JS`, `SEARCH_JS`, `TRACKS_JS`, `DASHBOARD_JS`, `PLAY_CLICK_JS`)
-viven TODOS en `selectors.rs`; los módulos solo los importan y parsean.
+viven TODOS en `cdp/selectors/` (`names`/`player`/`tracklist`/`library_js`/
+`search_js`/`dashboard_js` + `health.rs`); los módulos solo los importan y parsean.
 
 ---
 
@@ -159,7 +160,7 @@ viven TODOS en `selectors.rs`; los módulos solo los importan y parsean.
    cargo test diag_estado -- --nocapture        # grid, rowcount, sidebar, url
    cargo test diag_play_buttons -- --nocapture  # inventario de botones Play
    ```
-3. Cambia UNA const en `src/cdp/selectors.rs` (ahí vive todo) y corre:
+3. Cambia UNA const en `src/cdp/selectors/names.rs` (ahí vive todo) y corre:
    ```powershell
    cargo test  # js_menciona_sus_consts grita si el JS quedó divorciado de la const
    ```
@@ -180,7 +181,7 @@ Reglas al elegir el reemplazo (orden de estabilidad):
    El campo `red` muestra los endpoints que la página SÍ usa hoy
    (`pathfinder/vX/query`, `*.spclient.spotify.com`, `hosts`, keys de
    `localStorage`): ahí está la pista del flujo nuevo, sin adivinar.
-2. Actualiza `src/cdp/api.rs` (`web_token()` / `search_with_token()` /
+2. Actualiza `src/cdp/api/` (`token.rs` / `search.rs` /
    `parse_search_api()`) y valida con sus tests puros + `diag_api`.
 3. Mientras tanto todo sigue funcionando por el fallback DOM; y con
    `RATA_SPOT_API=0` fuerzas DOM directo para depurar.
@@ -197,13 +198,13 @@ Reglas al elegir el reemplazo (orden de estabilidad):
 ### Mapa rápido (qué vive dónde)
 
 ```
-src/cdp/selectors.rs  # TODO el DOM + HEALTH_JS + tests de sincronía
-src/cdp/api.rs        # fetch en página, token, search JSON, net_probe + tests puros
+src/cdp/selectors/  # TODO el DOM (names/player/tracklist/library_js/...) + health.rs + tests
+src/cdp/api/        # fetch en página, token, search JSON, net_probe + tests puros
 src/cdp/client.rs     # WS genérico + timeouts (5s conectar / 12s leer)
 src/cdp/transport.rs  # HTTP/1.1 + Content-Length/chunked + timeout 8s
 src/cdp/tabs.rs       # hallar/crear pestaña + spa_navigate (no mata audio)
 src/cdp/search.rs     # API primero, DOM después
-src/cdp/tests.rs      # diag_* (imprimen, no revientan) + vivos #[ignore]
+src/cdp/tests/      # diag_* (imprimen, no revientan) + vivos #[ignore]
 src/app/boot.rs       # health_summary() en el status + sala de espera P2
                     # (Brave sordo: espera el cierre y auto-lanza en frío)
 ```

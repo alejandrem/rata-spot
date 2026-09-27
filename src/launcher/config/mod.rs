@@ -1,18 +1,14 @@
 //! Config del lanzador: URL, flags de bajo consumo y rutas del navegador.
 
 mod candidates;
-mod dirs;
 mod find;
 mod lookup;
 mod running;
 
-pub use dirs::{is_fresh_profile, rata_profile_dir};
 pub use find::{find_brave_exe, find_browser_exe};
 pub use running::{is_brave_running, is_browser_running};
 #[allow(unused_imports)]
 pub(crate) use candidates::candidates_from_env;
-#[allow(unused_imports)]
-pub(crate) use dirs::data_dir;
 #[allow(unused_imports)]
 pub(crate) use lookup::{reg_app_path, where_lookup};
 

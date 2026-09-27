@@ -47,8 +47,6 @@ pub use library::library_diag;
 pub use playback::play_from_scratch;
 pub use search::search;
 pub use selectors::health_summary;
-#[allow(unused_imports)]
-pub use playback::play_spotify;
 pub use tabs::ensure_spotify_tab;
 /// Solo tests/diagnostico.
 #[allow(unused_imports)]

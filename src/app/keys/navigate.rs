@@ -1,7 +1,7 @@
 //! Navigate: j/k/flechas (con throttle) + l (recargar biblioteca).
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 use crate::{cdp, ui::{AppState, View}};
 
@@ -34,6 +34,10 @@ pub async fn handle_navigate(
             }
         }
         KeyCode::Char('l') => {
+            // Solo Press: con Repeat pegada spameaba snapshots CDP de 30s.
+            if key.kind == KeyEventKind::Repeat {
+                return Ok(false);
+            }
             // Recargar biblioteca a mano (por si se abrio tarde).
             state.pl_msg = "cargando biblioteca...".to_string();
             let _ = terminal.draw(|f| crate::ui::render(f, state));

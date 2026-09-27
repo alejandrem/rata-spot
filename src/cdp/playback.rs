@@ -21,7 +21,7 @@ use super::tabs::{ensure_spotify_tab, spotify_ws_url};
 /// y el loop reactivo la toma.
 /// La pagina fresca tarda en renderizar el player: reintenta el click
 /// hasta 15s. Si no aparece, diagnostica que muestra (login vs cargando).
-pub async fn play_spotify() -> Result<String> {
+async fn play_spotify() -> Result<String> {
     for _ in 0..30 {
         // WS fresco por intento: /json/list a veces flap ea vacio un momento.
         let ws_url = match spotify_ws_url().await {

@@ -440,11 +440,11 @@ search dependía 100% del DOM.
 **Causa técnica:** los JS vivían duplicados en `playback/library/search/
 tracks/track_page` y el search solo sabía leer anchors del DOM.
 
-**Fix doble:** 1) `src/cdp/selectors.rs`: TODOS los selectores y JS en un
+**Fix doble:** 1) `src/cdp/selectors/`: TODOS los selectores y JS en un
 solo lugar, con cadena de fallback (`data-testid` → `role`+`href` →
 `aria-label` ES/EN, jamás clases hash) + `health_summary()` que corre en
 `boot.rs` y pinta `DOM 6/6 ok` o qué falló. Tests obligan a que el JS
-mencione las consts. 2) `src/cdp/api.rs`: el search intenta JSON/red
+mencione las consts. 2) `src/cdp/api/`: el search intenta JSON/red
 primero (`fetch` dentro de la página con tu login + Web API `/v1/search`,
 tracks primero, cap 24 igual que el DOM) y cae al DOM si falla
 (`RATA_SPOT_API=0` lo apaga). Verificado en vivo: `diag_selectores` da
@@ -467,7 +467,7 @@ objetivo famoso; el `*` anulaba la defensa de Origin de Chromium
 (cualquier web visitada podía manejar el Brave por CDP: cookies,
 navegación, JS en tus sesiones).
 
-**Causa técnica:** flags estáticos en `launcher/config.rs` y
+**Causa técnica:** flags estáticos en `launcher/config/` y
 `transport.rs` con `CDP_PORT = 9222` clavado.
 
 **Fix:** nuevo `src/launcher/ports.rs`: al lanzar se aparta un puerto
@@ -551,7 +551,7 @@ aceptaban `playlist-tracklist` → espera imposible + `{error:
 'no-tracklist'}`. Las filas son idénticas adentro (`internal-track-link`,
 `a[href*="/artist/"]`, duración `m:ss`, botón `Reproducir ...`).
 
-**Fix:** `selectors.rs`: const `TRACKLIST_TESTIDS =
+**Fix:** `selectors/names.rs` + `selectors/tracklist.rs`: const `TRACKLIST_TESTIDS =
 ["playlist-tracklist", "track-list"]` y los 4 snippets (exists, scroll
 top/down, snapshot) aceptan ambos; test de sincronía lo obliga.
 Mensajes neutros (`abriendo...`, `la pagina no cargo sus canciones`).
@@ -560,6 +560,38 @@ rolas con número, título, artista y duración.
 
 **Para bebé:** la rata solo conocía la puerta de las playlists y se
 quedaba tocando la pared de los álbumes. Ahora toca las dos puertas owo.
+
+---
+
+## 28. Sala de espera fantasma: pedía cerrar Brave con Brave cerrado
+
+**Síntoma:** `cargo run` decía `Brave esta abierto SIN depuracion...
+cierra Brave por completo` aunque Brave NO estaba abierto (solo Edge
+en fondo con sus procesos `msedge.exe`).
+
+**Causa técnica:** el refactor "quitar rutas quemadas" cambió
+`is_brave_running()` en `src/launcher/config/running.rs` de filtro
+exacto (`tasklist /FI "IMAGENAME eq brave.exe"`) a escaneo genérico
+(`brave.exe || chrome.exe || msedge.exe || chromium.exe`). Pero
+`src/app/boot.rs` entra a sala de espera con
+`!cdp::debug_alive() && is_brave_running()`: cualquier Chromium sordo
+(Edge en fondo) la disparaba, aunque Brave podía lanzar en frío sin
+problema. Verificado con `tasklist`: `brave.exe` ausente +
+`msedge.exe` x7 presentes → antes `true` (mal), ahora `false` (bien).
+
+**Fix:** `is_brave_running()` vuelve a ser SOLO `brave.exe`;
+`is_browser_running()` queda aparte solo para diagnóstico y NUNCA se
+usa en el boot. `cargo check` limpio.
+
+**Regla anti-regresión:** el boot SOLO se bloquea por `brave.exe`.
+Jamás ampliar `is_brave_running()` a otros exes; si se quiere detectar
+otros navegadores, usar `is_browser_running()` y no llamarlo desde
+`boot()`. Antes de tocar `running.rs`, probar con Brave cerrado +
+Edge abierto: debe entrar directo en frío.
+
+**Para bebé:** la rata vigilaba la puerta de Brave, pero le dijeron
+"vigila TODAS las puertas" y se asustó con la del vecino (Edge)
+aunque su casa estaba vacía. Ahora solo mira su puerta owo.
 
 ---
 
